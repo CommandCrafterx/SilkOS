@@ -1715,10 +1715,10 @@ struct SymbolDictionaryDecodingInputParameters {
     u32 number_of_exported_symbols { 0 }; // "SDNUMEXSYMS" in spec.
 
     // Only set if uses_huffman_encoding is true.
-    JBIG2::HuffmanTable const* delta_height_table;               // "SDHUFFDH" in spec.
-    JBIG2::HuffmanTable const* delta_width_table;                // "SDHUFFDW" in spec.
-    JBIG2::HuffmanTable const* bitmap_size_table;                // "SDHUFFBMSIZE" in spec.
-    JBIG2::HuffmanTable const* number_of_symbol_instances_table; // "SDHUFFAGGINST" in spec.
+    JBIG2::HuffmanTable const* delta_height_table { nullptr };               // "SDHUFFDH" in spec.
+    JBIG2::HuffmanTable const* delta_width_table { nullptr };                // "SDHUFFDW" in spec.
+    JBIG2::HuffmanTable const* bitmap_size_table { nullptr };                // "SDHUFFBMSIZE" in spec.
+    JBIG2::HuffmanTable const* number_of_symbol_instances_table { nullptr }; // "SDHUFFAGGINST" in spec.
 
     u8 symbol_template { 0 };                                        // "SDTEMPLATE" in spec.
     Array<JBIG2::AdaptiveTemplatePixel, 4> adaptive_template_pixels; // "SDATX" / "SDATY" in spec.
@@ -2385,13 +2385,6 @@ static ErrorOr<void> decode_symbol_dictionary(JBIG2LoadingContext& context, Segm
             return Error::from_string_literal("JBIG2ImageDecoderPlugin: Symbol segment referred-to segment without symbols or huffman table");
     }
 
-    u8 custom_table_index = 0;
-    auto custom_table = [&custom_tables, &custom_table_index]() -> ErrorOr<JBIG2::HuffmanTable const*> {
-        if (custom_table_index >= custom_tables.size())
-            return Error::from_string_literal("JBIG2ImageDecoderPlugin: Custom Huffman table index out of range");
-        return custom_tables[custom_table_index++];
-    };
-
     // 7.4.2.1 Symbol dictionary segment data header
     FixedMemoryStream stream(segment.data);
 
@@ -2400,75 +2393,7 @@ static ErrorOr<void> decode_symbol_dictionary(JBIG2LoadingContext& context, Segm
     bool uses_huffman_encoding = (flags & 1) != 0;               // "SDHUFF" in spec.
     bool uses_refinement_or_aggregate_coding = (flags & 2) != 0; // "SDREFAGG" in spec.
 
-    u8 huffman_table_selection_for_height_differences = (flags >> 2) & 0b11; // "SDHUFFDH" in spec.
-    if (!uses_huffman_encoding && huffman_table_selection_for_height_differences != 0)
-        return Error::from_string_literal("JBIG2ImageDecoderPlugin: Invalid huffman_table_selection_for_height_differences");
-
-    JBIG2::HuffmanTable const* delta_height_table = nullptr;
-    if (uses_huffman_encoding) {
-        if (huffman_table_selection_for_height_differences == 0)
-            delta_height_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_4));
-        else if (huffman_table_selection_for_height_differences == 1)
-            delta_height_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_5));
-        else if (huffman_table_selection_for_height_differences == 2)
-            return Error::from_string_literal("JBIG2ImageDecoderPlugin: Invalid huffman_table_selection_for_height_differences");
-        else if (huffman_table_selection_for_height_differences == 3)
-            delta_height_table = TRY(custom_table());
-    }
-
-    u8 huffman_table_selection_for_width_differences = (flags >> 4) & 0b11; // "SDHUFFDW" in spec.
-    if (!uses_huffman_encoding && huffman_table_selection_for_width_differences != 0)
-        return Error::from_string_literal("JBIG2ImageDecoderPlugin: Invalid huffman_table_selection_for_width_differences");
-
-    JBIG2::HuffmanTable const* delta_width_table = nullptr;
-    if (uses_huffman_encoding) {
-        if (huffman_table_selection_for_width_differences == 0)
-            delta_width_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_2));
-        else if (huffman_table_selection_for_width_differences == 1)
-            delta_width_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_3));
-        else if (huffman_table_selection_for_width_differences == 2)
-            return Error::from_string_literal("JBIG2ImageDecoderPlugin: Invalid huffman_table_selection_for_height_differences");
-        else if (huffman_table_selection_for_width_differences == 3)
-            delta_width_table = TRY(custom_table());
-    }
-
-    bool uses_user_supplied_size_table = (flags >> 6) & 1; // "SDHUFFBMSIZE" in spec.
-    if (!uses_huffman_encoding && uses_user_supplied_size_table)
-        return Error::from_string_literal("JBIG2ImageDecoderPlugin: Invalid uses_user_supplied_size_table");
-
-    JBIG2::HuffmanTable const* bitmap_size_table = nullptr;
-    if (uses_huffman_encoding) {
-        if (!uses_user_supplied_size_table)
-            bitmap_size_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_1));
-        else
-            bitmap_size_table = TRY(custom_table());
-    }
-
-    bool uses_user_supplied_aggregate_table = (flags >> 7) & 1; // "SDHUFFAGGINST" in spec.
-    if (!uses_huffman_encoding && uses_user_supplied_aggregate_table)
-        return Error::from_string_literal("JBIG2ImageDecoderPlugin: Invalid uses_user_supplied_aggregate_table");
-
-    JBIG2::HuffmanTable const* number_of_symbol_instances_table = nullptr;
-    if (uses_huffman_encoding) {
-        if (!uses_user_supplied_aggregate_table)
-            number_of_symbol_instances_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_1));
-        else
-            number_of_symbol_instances_table = TRY(custom_table());
-    }
-
-    if (custom_table_index != custom_tables.size())
-        return Error::from_string_literal("JBIG2ImageDecoderPlugin: Not all referred custom tables used");
-
-    if (uses_huffman_encoding) {
-        if (!delta_width_table->has_oob_symbol())
-            return Error::from_string_literal("JBIG2ImageDecoderPlugin: Custom SDHUFFDW table must have OOB symbol");
-
-        if (delta_height_table->has_oob_symbol()
-            || bitmap_size_table->has_oob_symbol()
-            || number_of_symbol_instances_table->has_oob_symbol()) {
-            return Error::from_string_literal("JBIG2ImageDecoderPlugin: Custom Huffman tables must not have OOB symbol");
-        }
-    }
+    auto huffman_tables = TRY(symbol_dictionary_huffman_tables_from_flags(flags, custom_tables));
 
     bool bitmap_coding_context_used = (flags >> 8) & 1;
     if (uses_huffman_encoding && !uses_refinement_or_aggregate_coding && bitmap_coding_context_used)
@@ -2516,6 +2441,10 @@ static ErrorOr<void> decode_symbol_dictionary(JBIG2LoadingContext& context, Segm
     // 7.4.2.1.5 Number of new symbols (SDNUMNEWSYMS)
     u32 number_of_new_symbols = TRY(stream.read_value<BigEndian<u32>>());
 
+    u8 huffman_table_selection_for_height_differences = (flags >> 2) & 0b11; // "SDHUFFDH" in spec.
+    u8 huffman_table_selection_for_width_differences = (flags >> 4) & 0b11;  // "SDHUFFDW" in spec.
+    bool uses_user_supplied_size_table = (flags >> 6) & 1;                   // "SDHUFFBMSIZE" in spec.
+    bool uses_user_supplied_aggregate_table = (flags >> 7) & 1;              // "SDHUFFAGGINST" in spec.
     dbgln_if(JBIG2_DEBUG, "Symbol dictionary: uses_huffman_encoding={}", uses_huffman_encoding);
     dbgln_if(JBIG2_DEBUG, "Symbol dictionary: uses_refinement_or_aggregate_coding={}", uses_refinement_or_aggregate_coding);
     dbgln_if(JBIG2_DEBUG, "Symbol dictionary: huffman_table_selection_for_height_differences={}", huffman_table_selection_for_height_differences);
@@ -2557,10 +2486,10 @@ static ErrorOr<void> decode_symbol_dictionary(JBIG2LoadingContext& context, Segm
     inputs.input_symbols = move(symbols);
     inputs.number_of_new_symbols = number_of_new_symbols;
     inputs.number_of_exported_symbols = number_of_exported_symbols;
-    inputs.delta_height_table = delta_height_table;
-    inputs.delta_width_table = delta_width_table;
-    inputs.bitmap_size_table = bitmap_size_table;
-    inputs.number_of_symbol_instances_table = number_of_symbol_instances_table;
+    inputs.delta_height_table = huffman_tables.delta_height_table;
+    inputs.delta_width_table = huffman_tables.delta_width_table;
+    inputs.bitmap_size_table = huffman_tables.bitmap_size_table;
+    inputs.number_of_symbol_instances_table = huffman_tables.number_of_symbol_instances_table;
     inputs.symbol_template = template_used;
     inputs.adaptive_template_pixels = adaptive_template;
     inputs.refinement_template = refinement_template_used;
@@ -2714,122 +2643,15 @@ static ErrorOr<RegionResult> decode_text_region(JBIG2LoadingContext& context, Se
 
     // 7.4.3.1.2 Text region segment Huffman flags
     // "This field is only present if SBHUFF is 1."
-    JBIG2::HuffmanTable const* first_s_table = nullptr;
-    JBIG2::HuffmanTable const* subsequent_s_table = nullptr;
-    JBIG2::HuffmanTable const* delta_t_table = nullptr;
-    JBIG2::HuffmanTable const* refinement_delta_width_table = nullptr;
-    JBIG2::HuffmanTable const* refinement_delta_height_table = nullptr;
-    JBIG2::HuffmanTable const* refinement_x_offset_table = nullptr;
-    JBIG2::HuffmanTable const* refinement_y_offset_table = nullptr;
-    JBIG2::HuffmanTable const* refinement_size_table = nullptr;
+    JBIG2::TextRegionHuffmanTables huffman_tables;
     if (uses_huffman_encoding) {
         u16 huffman_flags = TRY(stream.read_value<BigEndian<u16>>());
-
-        u8 custom_table_index = 0;
-        auto custom_table = [&custom_tables, &custom_table_index]() -> ErrorOr<JBIG2::HuffmanTable const*> {
-            if (custom_table_index >= custom_tables.size())
-                return Error::from_string_literal("JBIG2ImageDecoderPlugin: Custom Huffman table index out of range");
-            return custom_tables[custom_table_index++];
-        };
-
-        auto first_s_selection = (huffman_flags >> 0) & 0b11; // "SBHUFFFS" in spec.
-        if (first_s_selection == 0)
-            first_s_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_6));
-        else if (first_s_selection == 1)
-            first_s_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_7));
-        else if (first_s_selection == 2)
-            return Error::from_string_literal("JBIG2ImageDecoderPlugin: Invalid first_s_table");
-        else if (first_s_selection == 3)
-            first_s_table = TRY(custom_table());
-
-        auto subsequent_s_selection = (huffman_flags >> 2) & 0b11; // "SBHUFFDS" in spec.
-        if (subsequent_s_selection == 0)
-            subsequent_s_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_8));
-        else if (subsequent_s_selection == 1)
-            subsequent_s_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_9));
-        else if (subsequent_s_selection == 2)
-            subsequent_s_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_10));
-        else if (subsequent_s_selection == 3)
-            subsequent_s_table = TRY(custom_table());
-
-        auto delta_t_selection = (huffman_flags >> 4) & 0b11; // "SBHUFFDT" in spec.
-        if (delta_t_selection == 0)
-            delta_t_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_11));
-        else if (delta_t_selection == 1)
-            delta_t_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_12));
-        else if (delta_t_selection == 2)
-            delta_t_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_13));
-        else if (delta_t_selection == 3)
-            delta_t_table = TRY(custom_table());
 
         // Quirk: 042_11.jb2 has refinement huffman table bits set but the SBREFINE bit is not set.
         if (!uses_refinement_coding && (huffman_flags & 0x7fc0) != 0 && !context.is_power_jbig2_file)
             return Error::from_string_literal("JBIG2ImageDecoderPlugin: Huffman flags have refinement bits set but refinement bit is not set");
 
-        auto refinement_delta_width_selection = (huffman_flags >> 6) & 0b11; // "SBHUFFRDW" in spec.
-        if (refinement_delta_width_selection == 0)
-            refinement_delta_width_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_14));
-        else if (refinement_delta_width_selection == 1)
-            refinement_delta_width_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_15));
-        else if (refinement_delta_width_selection == 2)
-            return Error::from_string_literal("JBIG2ImageDecoderPlugin: Invalid refinement_delta_width_table");
-        else if (refinement_delta_width_selection == 3)
-            refinement_delta_width_table = TRY(custom_table());
-
-        auto refinement_delta_height_selection = (huffman_flags >> 8) & 0b11; // "SBHUFFRDH" in spec.
-        if (refinement_delta_height_selection == 0)
-            refinement_delta_height_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_14));
-        else if (refinement_delta_height_selection == 1)
-            refinement_delta_height_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_15));
-        else if (refinement_delta_height_selection == 2)
-            return Error::from_string_literal("JBIG2ImageDecoderPlugin: Invalid refinement_delta_height_table");
-        else if (refinement_delta_height_selection == 3)
-            refinement_delta_height_table = TRY(custom_table());
-
-        auto refinement_x_offset_selection = (huffman_flags >> 10) & 0b11; // "SBHUFFRDX" in spec.
-        if (refinement_x_offset_selection == 0)
-            refinement_x_offset_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_14));
-        else if (refinement_x_offset_selection == 1)
-            refinement_x_offset_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_15));
-        else if (refinement_x_offset_selection == 2)
-            return Error::from_string_literal("JBIG2ImageDecoderPlugin: Invalid refinement_x_offset_table");
-        else if (refinement_x_offset_selection == 3)
-            refinement_x_offset_table = TRY(custom_table());
-
-        auto refinement_y_offset_selection = (huffman_flags >> 12) & 0b11; // "SBHUFFRDY" in spec.
-        if (refinement_y_offset_selection == 0)
-            refinement_y_offset_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_14));
-        else if (refinement_y_offset_selection == 1)
-            refinement_y_offset_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_15));
-        else if (refinement_y_offset_selection == 2)
-            return Error::from_string_literal("JBIG2ImageDecoderPlugin: Invalid refinement_y_offset_table");
-        else if (refinement_y_offset_selection == 3)
-            refinement_y_offset_table = TRY(custom_table());
-
-        auto refinement_size_selection = (huffman_flags >> 14) & 0b1; // "SBHUFFRSIZE" in spec.
-        if (refinement_size_selection == 0)
-            refinement_size_table = TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_1));
-        else if (refinement_size_selection == 1)
-            refinement_size_table = TRY(custom_table());
-
-        if (custom_table_index != custom_tables.size())
-            return Error::from_string_literal("JBIG2ImageDecoderPlugin: Not all referred custom tables used");
-
-        if (!subsequent_s_table->has_oob_symbol())
-            return Error::from_string_literal("JBIG2ImageDecoderPlugin: Custom SBHUFFDS table must have OOB symbol");
-
-        if (first_s_table->has_oob_symbol()
-            || delta_t_table->has_oob_symbol()
-            || refinement_delta_width_table->has_oob_symbol()
-            || refinement_delta_height_table->has_oob_symbol()
-            || refinement_x_offset_table->has_oob_symbol()
-            || refinement_y_offset_table->has_oob_symbol()
-            || refinement_size_table->has_oob_symbol()) {
-            return Error::from_string_literal("JBIG2ImageDecoderPlugin: Custom Huffman tables must not have OOB symbol");
-        }
-
-        if (huffman_flags & 0x8000)
-            return Error::from_string_literal("JBIG2ImageDecoderPlugin: Invalid text region segment Huffman flags");
+        huffman_tables = TRY(text_region_huffman_tables_from_flags(huffman_flags, custom_tables));
     }
 
     // 7.4.3.1.3 Text region refinement AT flags
@@ -2959,14 +2781,14 @@ static ErrorOr<RegionResult> decode_text_region(JBIG2LoadingContext& context, Se
     inputs.symbol_id_table = symbol_id_table;
     inputs.id_symbol_code_length = id_symbol_code_length;
     inputs.symbols = move(symbols);
-    inputs.first_s_table = first_s_table;
-    inputs.subsequent_s_table = subsequent_s_table;
-    inputs.delta_t_table = delta_t_table;
-    inputs.refinement_delta_width_table = refinement_delta_width_table;
-    inputs.refinement_delta_height_table = refinement_delta_height_table;
-    inputs.refinement_x_offset_table = refinement_x_offset_table;
-    inputs.refinement_y_offset_table = refinement_y_offset_table;
-    inputs.refinement_size_table = refinement_size_table;
+    inputs.first_s_table = huffman_tables.first_s_table;
+    inputs.subsequent_s_table = huffman_tables.subsequent_s_table;
+    inputs.delta_t_table = huffman_tables.delta_t_table;
+    inputs.refinement_delta_width_table = huffman_tables.refinement_delta_width_table;
+    inputs.refinement_delta_height_table = huffman_tables.refinement_delta_height_table;
+    inputs.refinement_x_offset_table = huffman_tables.refinement_x_offset_table;
+    inputs.refinement_y_offset_table = huffman_tables.refinement_y_offset_table;
+    inputs.refinement_size_table = huffman_tables.refinement_size_table;
     inputs.refinement_template = refinement_template;
     inputs.refinement_adaptive_template_pixels = adaptive_refinement_template;
 
