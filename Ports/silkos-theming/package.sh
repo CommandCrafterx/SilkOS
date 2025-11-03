@@ -1,9 +1,9 @@
 #!/usr/bin/env -S bash ../.port_include.sh
-port=serenity-theming
-version=955c25365c2e2e47af73b9f3acb68e8dcbc76520
-workdir="theming-${version}"
+port=silkos-theming
+version=d0613489cd0291e042b728549ff859f02f6ad97f
+workdir="silkos-theming-${version}"
 files=(
-    "https://github.com/SerenityOS/theming/archive/${version}.zip#976bc81bd3191e3acaa6dce1a6f5277b74f775a2203e2d8ea917cefbdecf0b4c"
+    "https://github.com/CommandCrafterx/silkos-theming/archive/${version}.zip#fdc0b05c3ef175fd5f0cfa2fb04609261d1cf148cc8c1a22902c8f20ea0bf0cf"
 )
 
 build() {
