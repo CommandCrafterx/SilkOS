@@ -544,11 +544,11 @@ static ErrorOr<Gfx::JBIG2::SegmentData> jbig2_symbol_dictionary_from_json(ToJSON
         template_pixels[i].y = adaptive_template_pixels[2 * i + 1];
     }
 
-    u8 symbol_refinement_template = (flags >> 12) & 1;
-    if (refinement_adaptive_template_pixels.is_empty())
-        adaptive_template_pixels = default_refinement_adaptive_template_pixels(symbol_refinement_template);
-
     bool uses_refinement_or_aggregate_coding = (flags & 2) != 0;
+    u8 symbol_refinement_template = (flags >> 12) & 1;
+    if (uses_refinement_or_aggregate_coding && refinement_adaptive_template_pixels.is_empty())
+        refinement_adaptive_template_pixels = default_refinement_adaptive_template_pixels(symbol_refinement_template);
+
     size_t number_of_refinement_adaptive_template_pixels = uses_refinement_or_aggregate_coding && symbol_refinement_template == 0 ? 2 : 0;
     if (refinement_adaptive_template_pixels.size() != number_of_refinement_adaptive_template_pixels * 2) {
         dbgln("expected {} entries, got {}", number_of_refinement_adaptive_template_pixels * 2, refinement_adaptive_template_pixels.size());
@@ -837,8 +837,10 @@ static ErrorOr<Gfx::JBIG2::TextRegionSegmentData> jbig2_text_region_from_json(To
             return Error::from_string_literal("expected array of i8 for \"refinement_adaptive_template_pixels\"");
         }
 
-        if (key == "strip_trailing_7fffs"sv)
+        if (key == "strip_trailing_7fffs"sv) {
             text_region.trailing_7fff_handling = TRY(jbig2_trailing_7fff_handling_from_json(value));
+            return {};
+        }
 
         dbgln("text_region key {}", key);
         return Error::from_string_literal("unknown text_region key");
@@ -846,6 +848,9 @@ static ErrorOr<Gfx::JBIG2::TextRegionSegmentData> jbig2_text_region_from_json(To
 
     bool uses_refinement_coding = (text_region.flags & 2) != 0;
     u8 refinement_template = (text_region.flags >> 15);
+    if (uses_refinement_coding && refinement_adaptive_template_pixels.is_empty())
+        refinement_adaptive_template_pixels = default_refinement_adaptive_template_pixels(refinement_template);
+
     size_t number_of_refinement_adaptive_template_pixels = uses_refinement_coding && refinement_template == 0 ? 2 : 0;
     if (refinement_adaptive_template_pixels.size() != number_of_refinement_adaptive_template_pixels * 2) {
         dbgln("expected {} entries, got {}", number_of_refinement_adaptive_template_pixels * 2, refinement_adaptive_template_pixels.size());

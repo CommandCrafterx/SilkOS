@@ -9,6 +9,7 @@
 // JBIG2Loader.cpp has many spec notes.
 
 #include <AK/BitStream.h>
+#include <AK/Enumerate.h>
 #include <AK/HashMap.h>
 #include <AK/MemoryStream.h>
 #include <AK/NonnullOwnPtr.h>
@@ -339,7 +340,6 @@ struct GenericRefinementRegionEncodingInputParameters {
     i32 reference_y_offset { 0 };                                       // "GRREFERENCEDY" in spec.
     bool is_typical_prediction_used { false };                          // "TPGRON" in spec.
     Array<JBIG2::AdaptiveTemplatePixel, 2> adaptive_template_pixels {}; // "GRATX" / "GRATY" in spec.
-    MQArithmeticEncoder::Trailing7FFFHandling trailing_7fff_handling { MQArithmeticEncoder::Trailing7FFFHandling::Keep };
 };
 
 struct RefinementContexts {
@@ -354,7 +354,7 @@ struct RefinementContexts {
 }
 
 // 6.3 Generic Refinement Region Decoding Procedure, but in reverse.
-static ErrorOr<ByteBuffer> generic_refinement_region_encoding_procedure(GenericRefinementRegionEncodingInputParameters& inputs, MQArithmeticEncoder& encoder, RefinementContexts& contexts)
+static ErrorOr<void> generic_refinement_region_encoding_procedure(GenericRefinementRegionEncodingInputParameters& inputs, MQArithmeticEncoder& encoder, RefinementContexts& contexts)
 {
     // FIXME: Try to come up with a way to share more code with generic_refinement_region_decoding_procedure().
     auto width = inputs.image.width();
@@ -489,7 +489,7 @@ static ErrorOr<ByteBuffer> generic_refinement_region_encoding_procedure(GenericR
         }
     }
 
-    return encoder.finalize(inputs.trailing_7fff_handling);
+    return {};
 }
 
 namespace {
@@ -637,6 +637,17 @@ static ErrorOr<void> encode_jbig2_header(Stream& stream, JBIG2::FileHeaderData c
         TRY(stream.write_value<BigEndian<u32>>(header.number_of_pages.value()));
 
     return {};
+}
+
+namespace {
+
+struct JBIG2EncodingContext {
+    HashMap<u32, JBIG2::SegmentData const*> segment_by_id;
+
+    HashMap<u32, Vector<JBIG2::Code>> codes_by_segment_id;
+    HashMap<u32, JBIG2::HuffmanTable> tables_by_segment_id;
+};
+
 }
 
 enum class PageAssociationSize {
@@ -809,7 +820,7 @@ static ErrorOr<void> encode_symbol_dictionary(JBIG2::SymbolDictionarySegmentData
     return Error::from_string_literal("JBIG2Writer: Symbol dictionary encoding is not yet fully implemented");
 }
 
-static ErrorOr<void> encode_text_region(JBIG2::TextRegionSegmentData const& text_region, JBIG2::SegmentHeaderData const&, HashMap<u32, JBIG2::SegmentData const*>&, Vector<u8>& scratch_buffer)
+static ErrorOr<void> encode_text_region(JBIG2::TextRegionSegmentData const& text_region, JBIG2::SegmentHeaderData const&, JBIG2EncodingContext const&, Vector<u8>& scratch_buffer)
 {
     // 7.4.3 Text region segment syntax
     bool uses_huffman_encoding = (text_region.flags & 1) != 0;
@@ -893,13 +904,13 @@ static ErrorOr<void> encode_pattern_dictionary(JBIG2::PatternDictionarySegmentDa
     return {};
 }
 
-static ErrorOr<void> encode_halftone_region(JBIG2::HalftoneRegionSegmentData const& halftone_region, JBIG2::SegmentHeaderData const& header, HashMap<u32, JBIG2::SegmentData const*>& segment_by_id, Vector<u8>& scratch_buffer)
+static ErrorOr<void> encode_halftone_region(JBIG2::HalftoneRegionSegmentData const& halftone_region, JBIG2::SegmentHeaderData const& header, JBIG2EncodingContext const& context, Vector<u8>& scratch_buffer)
 {
     // 7.4.5 Halftone region segment syntax
     if (header.referred_to_segments.size() != 1)
         return Error::from_string_literal("JBIG2Writer: Halftone region must refer to exactly one segment");
 
-    auto maybe_segment = segment_by_id.get(header.referred_to_segments[0].segment_number);
+    auto maybe_segment = context.segment_by_id.get(header.referred_to_segments[0].segment_number);
     if (!maybe_segment.has_value())
         return Error::from_string_literal("JBIG2Writer: Could not find referred-to segment for halftone region");
     auto const& referred_to_segment = *maybe_segment.value();
@@ -998,7 +1009,7 @@ static ErrorOr<void> encode_generic_region(JBIG2::GenericRegionSegmentData const
     return {};
 }
 
-static ErrorOr<void> encode_generic_refinement_region(JBIG2::GenericRefinementRegionSegmentData const& generic_refinement_region, JBIG2::SegmentHeaderData const& header, HashMap<u32, JBIG2::SegmentData const*>& segment_by_id, Vector<u8>& scratch_buffer)
+static ErrorOr<void> encode_generic_refinement_region(JBIG2::GenericRefinementRegionSegmentData const& generic_refinement_region, JBIG2::SegmentHeaderData const& header, JBIG2EncodingContext const& context, Vector<u8>& scratch_buffer)
 {
     // 7.4.7 Generic refinement region syntax
     if (header.referred_to_segments.size() > 1)
@@ -1006,7 +1017,7 @@ static ErrorOr<void> encode_generic_refinement_region(JBIG2::GenericRefinementRe
     if (header.referred_to_segments.size() == 0)
         return Error::from_string_literal("JBIG2Writer: Generic refinement region refining page not yet implemented");
 
-    auto maybe_segment = segment_by_id.get(header.referred_to_segments[0].segment_number);
+    auto maybe_segment = context.segment_by_id.get(header.referred_to_segments[0].segment_number);
     if (!maybe_segment.has_value())
         return Error::from_string_literal("JBIG2Writer: Could not find referred-to segment for generic refinement region");
     auto const& referred_to_segment = *maybe_segment.value();
@@ -1027,10 +1038,10 @@ static ErrorOr<void> encode_generic_refinement_region(JBIG2::GenericRefinementRe
     inputs.reference_bitmap = reference_bitmap;
     inputs.is_typical_prediction_used = (generic_refinement_region.flags >> 1) & 1;
     inputs.adaptive_template_pixels = generic_refinement_region.adaptive_template_pixels;
-    inputs.trailing_7fff_handling = generic_refinement_region.trailing_7fff_handling;
     RefinementContexts contexts { inputs.gr_template };
     MQArithmeticEncoder encoder = TRY(MQArithmeticEncoder::initialize(0));
-    auto data = TRY(generic_refinement_region_encoding_procedure(inputs, encoder, contexts));
+    TRY(generic_refinement_region_encoding_procedure(inputs, encoder, contexts));
+    auto data = TRY(encoder.finalize(generic_refinement_region.trailing_7fff_handling));
 
     int number_of_adaptive_template_pixels = inputs.gr_template == 0 ? 2 : 0;
 
@@ -1059,7 +1070,7 @@ static ErrorOr<void> encode_page_information_data(Stream& stream, JBIG2::PageInf
     return {};
 }
 
-static ErrorOr<void> encode_tables(JBIG2::TablesData const& tables, Vector<u8>& scratch_buffer)
+static ErrorOr<void> encode_tables(JBIG2::TablesData const& tables, JBIG2::SegmentHeaderData const& header, JBIG2EncodingContext& context, Vector<u8>& scratch_buffer)
 {
     // 7.4.13 Code table segment syntax
     // B.2 Code table structure, but in reverse
@@ -1092,22 +1103,30 @@ static ErrorOr<void> encode_tables(JBIG2::TablesData const& tables, Vector<u8>& 
     //         NTEMP = 0"
     i32 value = tables.lowest_value;
     size_t i = 0;
+
+    // "5) Decode each table line as follows:"
+    Vector<u8> prefix_lengths;
+    Vector<u8> range_lengths;
+    Vector<Optional<i32>> range_lows;
     do {
         if (i >= tables.entries.size())
             return Error::from_string_literal("JBIG2Writer: Not enough table entries");
 
         // "a) Read HTPS bits."
         TRY(write_prefix_length(tables.entries[i].prefix_length));
+        TRY(prefix_lengths.try_append(tables.entries[i].prefix_length));
 
         // "b) Read HTRS bits."
         if (tables.entries[i].range_length >= (1 << range_bit_count))
             return Error::from_string_literal("JBIG2Writer: Table range length too large for bit count");
         TRY(bit_stream.write_bits<u8>(tables.entries[i].range_length, range_bit_count));
+        TRY(range_lengths.try_append(tables.entries[i].range_length));
 
         // "c) Set:
         //         RANGELOW[NTEMP] = CURRANGELOW
         //         CURRANGELOW = CURRANGELOW + 2 ** RANGELEN[NTEMP]
         //         NTEMP = NTEMP + 1"
+        TRY(range_lows.try_append(value));
         value += 1 << tables.entries[i].range_length;
         i++;
 
@@ -1120,20 +1139,49 @@ static ErrorOr<void> encode_tables(JBIG2::TablesData const& tables, Vector<u8>& 
     // "6) Read HTPS bits. Let LOWPREFLEN be the value read."
     // "7) [...] This is the lower range table line for this table."
     TRY(write_prefix_length(tables.lower_range_prefix_length));
+    TRY(prefix_lengths.try_append(tables.lower_range_prefix_length));
+    TRY(range_lengths.try_append(32));
+    TRY(range_lows.try_append(tables.lowest_value - 1));
 
     // "8) Read HTPS bits. Let HIGHPREFLEN be the value read."
     // "9) [...] This is the upper range table line for this table."
     TRY(write_prefix_length(tables.upper_range_prefix_length));
+    TRY(prefix_lengths.try_append(tables.upper_range_prefix_length));
+    TRY(range_lengths.try_append(32));
+    TRY(range_lows.try_append(tables.highest_value));
 
     // "10) If HTOOB is 1, then:"
     if (has_out_of_band) {
         // "a) Read HTPS bits. Let OOBPREFLEN be the value read."
         TRY(write_prefix_length(tables.out_of_band_prefix_length));
+        TRY(prefix_lengths.try_append(tables.out_of_band_prefix_length));
+        TRY(range_lengths.try_append(0));
+        TRY(range_lows.try_append(OptionalNone {}));
     }
 
     TRY(bit_stream.align_to_byte_boundary());
 
     TRY(scratch_buffer.try_extend(TRY(output_stream.read_until_eof())));
+
+    // "11) Create the prefix codes using the algorithm described in B.3."
+    auto codes = TRY(JBIG2::assign_huffman_codes(prefix_lengths));
+
+    Vector<JBIG2::Code> table_codes;
+    for (auto const& [i, length] : enumerate(prefix_lengths)) {
+        if (length == 0)
+            continue;
+
+        JBIG2::Code code { .prefix_length = length, .range_length = range_lengths[i], .first_value = range_lows[i], .code = codes[i] };
+        if (i == prefix_lengths.size() - (has_out_of_band ? 3 : 2))
+            code.prefix_length |= JBIG2::Code::LowerRangeBit;
+        table_codes.append(code);
+    }
+
+    if (context.codes_by_segment_id.set(header.segment_number, move(table_codes)) != HashSetResult::InsertedNewEntry)
+        return Error::from_string_literal("JBIG2Writer: Duplicate table segment ID");
+    JBIG2::HuffmanTable table { context.codes_by_segment_id.get(header.segment_number).value().span(), has_out_of_band };
+    VERIFY(context.tables_by_segment_id.set(header.segment_number, table) == HashSetResult::InsertedNewEntry);
+
     return {};
 }
 
@@ -1192,7 +1240,7 @@ static ErrorOr<void> encode_extension(JBIG2::ExtensionData const& extension, Vec
     return {};
 }
 
-static ErrorOr<void> encode_segment(Stream& stream, JBIG2::SegmentData const& segment_data, HashMap<u32, JBIG2::SegmentData const*>& segment_by_id)
+static ErrorOr<void> encode_segment(Stream& stream, JBIG2::SegmentData const& segment_data, JBIG2EncodingContext& context)
 {
     Vector<u8> scratch_buffer;
 
@@ -1201,24 +1249,24 @@ static ErrorOr<void> encode_segment(Stream& stream, JBIG2::SegmentData const& se
             TRY(encode_symbol_dictionary(symbol_dictionary, scratch_buffer));
             return scratch_buffer;
         },
-        [&scratch_buffer, &segment_data, &segment_by_id](JBIG2::ImmediateTextRegionSegmentData const& text_region_wrapper) -> ErrorOr<ReadonlyBytes> {
-            TRY(encode_text_region(text_region_wrapper.text_region, segment_data.header, segment_by_id, scratch_buffer));
+        [&scratch_buffer, &segment_data, &context](JBIG2::ImmediateTextRegionSegmentData const& text_region_wrapper) -> ErrorOr<ReadonlyBytes> {
+            TRY(encode_text_region(text_region_wrapper.text_region, segment_data.header, context, scratch_buffer));
             return scratch_buffer;
         },
-        [&scratch_buffer, &segment_data, &segment_by_id](JBIG2::ImmediateLosslessTextRegionSegmentData const& text_region_wrapper) -> ErrorOr<ReadonlyBytes> {
-            TRY(encode_text_region(text_region_wrapper.text_region, segment_data.header, segment_by_id, scratch_buffer));
+        [&scratch_buffer, &segment_data, &context](JBIG2::ImmediateLosslessTextRegionSegmentData const& text_region_wrapper) -> ErrorOr<ReadonlyBytes> {
+            TRY(encode_text_region(text_region_wrapper.text_region, segment_data.header, context, scratch_buffer));
             return scratch_buffer;
         },
         [&scratch_buffer](JBIG2::PatternDictionarySegmentData const& pattern_dictionary) -> ErrorOr<ReadonlyBytes> {
             TRY(encode_pattern_dictionary(pattern_dictionary, scratch_buffer));
             return scratch_buffer;
         },
-        [&scratch_buffer, &segment_data, &segment_by_id](JBIG2::ImmediateHalftoneRegionSegmentData const& halftone_region_wrapper) -> ErrorOr<ReadonlyBytes> {
-            TRY(encode_halftone_region(halftone_region_wrapper.halftone_region, segment_data.header, segment_by_id, scratch_buffer));
+        [&scratch_buffer, &segment_data, &context](JBIG2::ImmediateHalftoneRegionSegmentData const& halftone_region_wrapper) -> ErrorOr<ReadonlyBytes> {
+            TRY(encode_halftone_region(halftone_region_wrapper.halftone_region, segment_data.header, context, scratch_buffer));
             return scratch_buffer;
         },
-        [&scratch_buffer, &segment_data, &segment_by_id](JBIG2::ImmediateLosslessHalftoneRegionSegmentData const& halftone_region_wrapper) -> ErrorOr<ReadonlyBytes> {
-            TRY(encode_halftone_region(halftone_region_wrapper.halftone_region, segment_data.header, segment_by_id, scratch_buffer));
+        [&scratch_buffer, &segment_data, &context](JBIG2::ImmediateLosslessHalftoneRegionSegmentData const& halftone_region_wrapper) -> ErrorOr<ReadonlyBytes> {
+            TRY(encode_halftone_region(halftone_region_wrapper.halftone_region, segment_data.header, context, scratch_buffer));
             return scratch_buffer;
         },
         [&scratch_buffer](JBIG2::ImmediateGenericRegionSegmentData const& generic_region_wrapper) -> ErrorOr<ReadonlyBytes> {
@@ -1233,16 +1281,16 @@ static ErrorOr<void> encode_segment(Stream& stream, JBIG2::SegmentData const& se
             TRY(encode_generic_region(generic_region_wrapper.generic_region, scratch_buffer));
             return scratch_buffer;
         },
-        [&scratch_buffer, &segment_data, &segment_by_id](JBIG2::ImmediateGenericRefinementRegionSegmentData const& generic_refinement_region_wrapper) -> ErrorOr<ReadonlyBytes> {
-            TRY(encode_generic_refinement_region(generic_refinement_region_wrapper.generic_refinement_region, segment_data.header, segment_by_id, scratch_buffer));
+        [&scratch_buffer, &segment_data, &context](JBIG2::ImmediateGenericRefinementRegionSegmentData const& generic_refinement_region_wrapper) -> ErrorOr<ReadonlyBytes> {
+            TRY(encode_generic_refinement_region(generic_refinement_region_wrapper.generic_refinement_region, segment_data.header, context, scratch_buffer));
             return scratch_buffer;
         },
-        [&scratch_buffer, &segment_data, &segment_by_id](JBIG2::ImmediateLosslessGenericRefinementRegionSegmentData const& generic_refinement_region_wrapper) -> ErrorOr<ReadonlyBytes> {
-            TRY(encode_generic_refinement_region(generic_refinement_region_wrapper.generic_refinement_region, segment_data.header, segment_by_id, scratch_buffer));
+        [&scratch_buffer, &segment_data, &context](JBIG2::ImmediateLosslessGenericRefinementRegionSegmentData const& generic_refinement_region_wrapper) -> ErrorOr<ReadonlyBytes> {
+            TRY(encode_generic_refinement_region(generic_refinement_region_wrapper.generic_refinement_region, segment_data.header, context, scratch_buffer));
             return scratch_buffer;
         },
-        [&scratch_buffer, &segment_data, &segment_by_id](JBIG2::IntermediateGenericRefinementRegionSegmentData const& generic_refinement_region_wrapper) -> ErrorOr<ReadonlyBytes> {
-            TRY(encode_generic_refinement_region(generic_refinement_region_wrapper.generic_refinement_region, segment_data.header, segment_by_id, scratch_buffer));
+        [&scratch_buffer, &segment_data, &context](JBIG2::IntermediateGenericRefinementRegionSegmentData const& generic_refinement_region_wrapper) -> ErrorOr<ReadonlyBytes> {
+            TRY(encode_generic_refinement_region(generic_refinement_region_wrapper.generic_refinement_region, segment_data.header, context, scratch_buffer));
             return scratch_buffer;
         },
         [&scratch_buffer](JBIG2::PageInformationSegment const& page_information) -> ErrorOr<ReadonlyBytes> {
@@ -1263,8 +1311,8 @@ static ErrorOr<void> encode_segment(Stream& stream, JBIG2::SegmentData const& se
         [](JBIG2::EndOfFileSegmentData const&) -> ErrorOr<ReadonlyBytes> {
             return ReadonlyBytes {};
         },
-        [&scratch_buffer](JBIG2::TablesData const& tables) -> ErrorOr<ReadonlyBytes> {
-            TRY(encode_tables(tables, scratch_buffer));
+        [&scratch_buffer, &segment_data, &context](JBIG2::TablesData const& tables) -> ErrorOr<ReadonlyBytes> {
+            TRY(encode_tables(tables, segment_data.header, context, scratch_buffer));
             return scratch_buffer;
         },
         [&scratch_buffer](JBIG2::ExtensionData const& extension) -> ErrorOr<ReadonlyBytes> {
@@ -1315,14 +1363,14 @@ ErrorOr<void> JBIG2Writer::encode_with_explicit_data(Stream& stream, JBIG2::File
 
     TRY(encode_jbig2_header(stream, file_data.header));
 
-    HashMap<u32, JBIG2::SegmentData const*> segment_by_id;
+    JBIG2EncodingContext context;
     for (auto const& segment : file_data.segments) {
-        if (segment_by_id.set(segment.header.segment_number, &segment) != HashSetResult::InsertedNewEntry)
+        if (context.segment_by_id.set(segment.header.segment_number, &segment) != HashSetResult::InsertedNewEntry)
             return Error::from_string_literal("JBIG2Writer: Duplicate segment number");
     }
 
     for (auto const& segment : file_data.segments) {
-        TRY(encode_segment(stream, segment, segment_by_id));
+        TRY(encode_segment(stream, segment, context));
     }
 
     return {};
