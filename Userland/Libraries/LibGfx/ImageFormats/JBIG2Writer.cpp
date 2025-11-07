@@ -1116,7 +1116,7 @@ static ErrorOr<ByteBuffer> symbol_dictionary_encoding_procedure(SymbolDictionary
             //
             //     Decode the bitmap by reading this many bytes and treating it as HCHEIGHT rows of TOTWIDTH pixels, each
             //     row padded out to a byte boundary with 0-7 0 bits."
-            TRY(bit_stream->write_until_depleted(image.bytes())); // XXX zero padding
+            TRY(bit_stream->write_until_depleted(image.bytes()));
 
             // "5) Skip over any bits remaining in the last byte read."
             TRY(bit_stream->align_to_byte_boundary());
@@ -1946,7 +1946,7 @@ static ErrorOr<void> encode_halftone_region(JBIG2::HalftoneRegionSegmentData con
         contexts = JBIG2::GenericContexts { inputs.template_id };
     auto data = TRY(grayscale_image_encoding_procedure(inputs, contexts));
 
-    TRY(scratch_buffer.try_resize(sizeof(JBIG2::RegionSegmentInformationField) + 1 + 2 * 4 * 2 * 2 + data.size()));
+    TRY(scratch_buffer.try_resize(sizeof(JBIG2::RegionSegmentInformationField) + 1 + 4 * 4 + 2 * 2 + data.size()));
     FixedMemoryStream stream { scratch_buffer, FixedMemoryStream::Mode::ReadWrite };
 
     TRY(encode_region_segment_information_field(stream, halftone_region.region_segment_information));

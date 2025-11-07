@@ -1382,10 +1382,10 @@ struct TextRegionDecodingInputParameters {
     Array<JBIG2::AdaptiveTemplatePixel, 2> refinement_adaptive_template_pixels {}; // "SBRATX" / "SBRATY" in spec.
     // FIXME: COLEXTFLAG, SBCOLS
 
-    // If uses_huffman_encoding is true, text_region_encoding_procedure() reads data off this stream.
+    // If uses_huffman_encoding is true, text_region_decoding_procedure() reads data off this stream.
     Stream* stream { nullptr };
 
-    // If uses_huffman_encoding is false, text_region_encoding_procedure() reads data off this decoder.
+    // If uses_huffman_encoding is false, text_region_decoding_procedure() reads data off this decoder.
     MQArithmeticDecoder* arithmetic_decoder { nullptr };
 };
 
@@ -1777,7 +1777,6 @@ static ErrorOr<Vector<BilevelSubImage>> symbol_dictionary_decoding_procedure(Sym
     // 6.5.8.2.1 Number of symbol instances in aggregation
     // If SDHUFF is 1, decode a value using the Huffman table specified by SDHUFFAGGINST.
     // If SDHUFF is 0, decode a value using the IAAI integer arithmetic decoding procedure (see Annex A).
-    Optional<JBIG2::ArithmeticIntegerDecoder> number_of_symbol_instances_decoder; // "IAAI" in spec.
     auto read_number_of_symbol_instances = [&]() -> ErrorOr<i32> {
         if (inputs.uses_huffman_encoding)
             return inputs.number_of_symbol_instances_table->read_symbol_non_oob(*bit_stream);
@@ -1911,6 +1910,7 @@ static ErrorOr<Vector<BilevelSubImage>> symbol_dictionary_decoding_procedure(Sym
             //     Decode the bitmap by reading this many bytes and treating it as HCHEIGHT rows of TOTWIDTH pixels, each
             //     row padded out to a byte boundary with 0-7 0 bits."
             if (bitmap_size == 0) {
+                // FIXME: Validate that the pad bits are 0.
                 auto result = TRY(BilevelImage::create(total_width, height));
                 TRY(bit_stream->read_until_filled(result->bytes()));
                 return result;
