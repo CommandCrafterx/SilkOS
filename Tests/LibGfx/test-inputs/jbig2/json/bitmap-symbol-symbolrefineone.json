@@ -23,6 +23,19 @@
             "page_association": 1,
             "retained": true,
             "data": {
+                "flags": {
+                    "uses_huffman_encoding": false,
+                    "uses_refinement_or_aggregate_coding": false,
+                    "huffman_table_selection_for_height_differences": 0,
+                    "huffman_table_selection_for_width_differences": 0,
+                    "huffman_table_selection_for_bitmap_sizes": 0,
+                    "huffman_table_selection_for_number_of_symbol_instances": 0,
+                    "is_bitmap_coding_context_used": false,
+                    "is_bitmap_coding_context_retained": false,
+                    "template": 0,
+                    "refinement_template": 0
+                },
+
                 "height_classes": [
                     {
                         "symbols": [
@@ -90,11 +103,61 @@
 
         {
             "segment_number": 2,
-            "type": "lossless_text_region",
+            "type": "symbol_dictionary",
             "page_association": 1,
+            "retained": true,
             "referred_to_segments": [
                 {
                     "segment_number": 1,
+                    "retained": false
+                }
+            ],
+            "data": {
+                "flags": {
+                    "uses_huffman_encoding": false,
+                    "uses_refinement_or_aggregate_coding": true,
+                    "huffman_table_selection_for_height_differences": 0,
+                    "huffman_table_selection_for_width_differences": 0,
+                    "huffman_table_selection_for_bitmap_sizes": 0,
+                    "huffman_table_selection_for_number_of_symbol_instances": 0,
+                    "is_bitmap_coding_context_used": false,
+                    "is_bitmap_coding_context_retained": false,
+                    "template": 0,
+                    "refinement_template": 0
+                },
+
+                "height_classes": [
+                    {
+                        "symbols": [
+                            {
+                                "refines_symbol_to": {
+                                    "symbol_id": 1,
+                                    "delta_x_offset": 0,
+                                    "delta_y_offset": 0,
+                                    "image_data": {
+                                        "from_file": "bitmap.bmp",
+                                        "crop": {
+                                            "x": 60,
+                                            "y": 265,
+                                            "width": 40,
+                                            "height": 75
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+
+        {
+            "segment_number": 3,
+            "type": "text_region",
+            "page_association": 1,
+            "referred_to_segments": [
+                {
+                    "segment_number": 2,
                     "retained": false
                 }
             ],
@@ -105,10 +168,24 @@
                 },
                 "flags": {
                     "uses_huffman_encoding": false,
-                    "uses_refinement_coding": true,
+                    "uses_refinement_coding": false,
                     "strip_size": 2,
                     "reference_corner": "top_left",
+                    "is_transposed": false,
+                    "combination_operator": "xor",
+                    "default_pixel_value": "white",
+                    "delta_s_offset": 3,
                     "refinement_template": 0
+                },
+                "huffman_flags": {
+                    "huffman_table_selection_for_first_s": 0,
+                    "huffman_table_selection_for_subsequent_s": 0,
+                    "huffman_table_selection_for_t": 0,
+                    "huffman_table_selection_for_refinement_delta_width": 0,
+                    "huffman_table_selection_for_refinement_delta_height": 0,
+                    "huffman_table_selection_for_refinement_delta_x_offset": 0,
+                    "huffman_table_selection_for_refinement_delta_y_offset": 0,
+                    "huffman_table_selection_for_refinement_size_table": 0
                 },
 
                 "initial_strip_t": -4,
@@ -149,22 +226,7 @@
                             {
                                 "instance_s": 60,
                                 "instance_t": 265,
-                                "symbol_id": 1,
-                                "instance_refines_symbol_to": {
-                                    "delta_width": 0,
-                                    "delta_height": 0,
-                                    "delta_x_offset": 0,
-                                    "delta_y_offset": 0,
-                                    "image_data": {
-                                        "from_file": "bitmap.bmp",
-                                        "crop": {
-                                            "x": 60,
-                                            "y": 265,
-                                            "width": 40,
-                                            "height": 75
-                                        }
-                                    }
-                                }
+                                "symbol_id": 4
                             }
                         ]
                     }
@@ -173,7 +235,7 @@
         },
 
         {
-            "segment_number": 3,
+            "segment_number": 4,
             "type": "end_of_page",
             "page_association": 1
         }
