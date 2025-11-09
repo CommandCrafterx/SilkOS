@@ -17,6 +17,7 @@
 #include <LibGfx/ImageFormats/ISOBMFF/Reader.h>
 #include <LibGfx/ImageFormats/JPEGXL/Channel.h>
 #include <LibGfx/ImageFormats/JPEGXL/Common.h>
+#include <LibGfx/ImageFormats/JPEGXL/DCTNaturalOrder.h>
 #include <LibGfx/ImageFormats/JPEGXL/EntropyDecoder.h>
 #include <LibGfx/ImageFormats/JPEGXL/ModularTransforms.h>
 #include <LibGfx/ImageFormats/JPEGXL/SelfCorrectingPredictor.h>
@@ -937,6 +938,57 @@ static u64 num_toc_entries(FrameHeader const& frame_header, u64 num_groups, u64 
     return 1 + num_lf_groups + 1 + num_groups * frame_header.passes.num_passes;
 }
 
+// F.3.2 - Decoding permutations
+static ErrorOr<Vector<u32>> decode_permutations(LittleEndianInputBitStream& stream, EntropyDecoder& decoder, u32 size, u32 skip)
+{
+    // "Let GetContext(x) denote min(7, ceil(log2(x + 1)))."
+    auto get_context = [](u32 x) -> u32 {
+        return min(7, ceil(log2(x + 1)));
+    };
+
+    // "The decoder first decodes an integer end, as specified in C.3.3,
+    // using DecodeHybridVarLenUint(GetContext(size))."
+    auto end = TRY(decoder.decode_hybrid_uint(stream, get_context(size)));
+
+    // "The value end is at most size − skip."
+    if (end > size - skip)
+        return Error::from_string_literal("JPEGXLLoader: Invalid value for end when decoding permutations");
+
+    // "Then a sequence lehmer of size elements is produced as follows. It is zero-initialized."
+    auto lehmer = TRY(FixedArray<u32>::create(size));
+
+    // "For each index i in range [skip, skip + end), the value lehmer[i] is set to
+    // DecodeHybridVarLenUint(GetContext(i > skip ? lehmer[i − 1] : 0));"
+    for (u32 i = skip; i < skip + end; ++i) {
+        lehmer[i] = TRY(decoder.decode_hybrid_uint(stream, get_context(i > skip ? lehmer[i - 1] : 0)));
+        // "this value is strictly less than size − i."
+        if (lehmer[i] >= size - i)
+            return Error::from_string_literal("JPEGXLLoader: Decoded permutation is invalid");
+    }
+
+    // "The decoder then maintains a sequence of elements temp, initially containing
+    // the numbers [0, size) in increasing order,"
+    Vector<u32> temp;
+    TRY(temp.try_ensure_capacity(size));
+    for (u32 i = 0; i < size; ++i)
+        temp.append(i);
+
+    // "and a sequence of elements permutation, initially empty."
+    Vector<u32> permutation;
+    TRY(permutation.try_ensure_capacity(size));
+
+    // "Then, for each integer i in the range [0, size), the decoder appends to
+    // permutation element temp[lehmer[i]], then removes it from temp, leaving the
+    // relative order of other elements unchanged."
+    for (u32 i = 0; i < size; ++i) {
+        permutation.append(temp[lehmer[i]]);
+        temp.remove(lehmer[i]);
+    }
+
+    // " Finally, permutation is the decoded permutation."
+    return permutation;
+}
+
 static ErrorOr<TOC> read_toc(LittleEndianInputBitStream& stream, FrameHeader const& frame_header, u64 num_groups, u64 num_lf_groups)
 {
     TOC toc;
@@ -1733,6 +1785,9 @@ static ErrorOr<GlobalModular> read_global_modular(LittleEndianInputBitStream& st
     auto channels = TRY(FixedArray<ChannelInfo>::create(num_channels));
     channels.fill_with(ChannelInfo::from_size(frame_size));
 
+    if (channels.is_empty())
+        return global_modular;
+
     // "No inverse transforms are applied yet."
     global_modular.modular_data = TRY(read_modular_bitstream(stream,
         {
@@ -1836,13 +1891,105 @@ static ErrorOr<FixedArray<Patch>> read_patches(LittleEndianInputBitStream& strea
     TRY(decoder.ensure_end_state());
     return patches;
 }
+///
 
+/// I.2.1 - Quantizer
+struct Quantizer {
+    u32 global_scale {};
+    u32 quant_lf {};
+};
+
+static ErrorOr<Quantizer> read_quantizer(LittleEndianInputBitStream& stream)
+{
+    Quantizer quantizer;
+    quantizer.global_scale = U32(1 + TRY(stream.read_bits(11)), 2049 + TRY(stream.read_bits(11)), 4097 + TRY(stream.read_bits(12)), 8193 + TRY(stream.read_bits(16)));
+    quantizer.quant_lf = U32(16, 1 + TRY(stream.read_bits(5)), 1 + TRY(stream.read_bits(8)), 1 + TRY(stream.read_bits(16)));
+
+    return quantizer;
+}
+///
+
+/// I.2.2 - HF block context decoding
+struct HFBlockContext {
+    Vector<u32> block_ctx_map {};
+    Vector<u32> qf_thresholds {};
+    Array<Vector<i32>, 3> lf_thresholds {};
+};
+
+static ErrorOr<HFBlockContext> read_hf_block_context(LittleEndianInputBitStream& stream)
+{
+    HFBlockContext hf_block_context;
+
+    if (TRY(stream.read_bit())) {
+        hf_block_context.block_ctx_map = { 0, 1, 2, 2, 3, 3, 4, 5, 6, 6, 6, 6, 6,
+            7, 8, 9, 9, 10, 11, 12, 13, 14, 14, 14, 14, 14,
+            7, 8, 9, 9, 10, 11, 12, 13, 14, 14, 14, 14, 14 };
+    } else {
+        Array<u8, 3> nb_lf_thr {};
+
+        for (u8 i = 0; i < 3; i++) {
+            nb_lf_thr[i] = TRY(stream.read_bits(4));
+            for (u8 j = 0; j < nb_lf_thr[i]; j++) {
+                i32 t = unpack_signed(U32(TRY(stream.read_bits(4)), 16 + TRY(stream.read_bits(8)), 272 + TRY(stream.read_bits(16)), 65808 + TRY(stream.read_bits(32))));
+                TRY(hf_block_context.lf_thresholds[i].try_append(t));
+            }
+        }
+
+        u8 nb_qf_thr = TRY(stream.read_bits(4));
+        for (u8 i = 0; i < nb_qf_thr; i++) {
+            u32 t = 1 + U32(TRY(stream.read_bits(2)), 4 + TRY(stream.read_bits(3)), 12 + TRY(stream.read_bits(5)), 44 + TRY(stream.read_bits(8)));
+            TRY(hf_block_context.qf_thresholds.try_append(t));
+        }
+
+        u32 bsize = 39 * (nb_qf_thr + 1) * (nb_lf_thr[0] + 1) * (nb_lf_thr[1] + 1) * (nb_lf_thr[2] + 1);
+
+        if (bsize > 39 * 64)
+            return Error::from_string_literal("JPEGXLLoader: Invalid bsize in read HF Block Context");
+
+        /* num_dist = bsize <= 39 * 64 and the resulting num_clusters <= 16 */
+        auto [clusters, num_clusters] = TRY(read_pre_clustered_distributions(stream, bsize));
+        hf_block_context.block_ctx_map = move(clusters);
+        if (num_clusters > 16)
+            return Error::from_string_literal("JPEGXLLoader: Invalid num_clusters in HF Block Context");
+    }
+
+    return hf_block_context;
+}
+///
+
+/// I.2.3 - LF channel correlation factors
+struct LfChannelCorrelation {
+    u32 colour_factor { 84 };
+    f32 base_correlation_x { 0.0 };
+    f32 base_correlation_b { 1.0 };
+    u8 x_factor_lf { 128 };
+    u8 b_factor_lf { 128 };
+};
+
+static ErrorOr<LfChannelCorrelation> read_lf_channel_correlation(LittleEndianInputBitStream& stream)
+{
+    LfChannelCorrelation lf_channel_correlation;
+
+    bool all_default = TRY(stream.read_bit());
+    if (!all_default) {
+        lf_channel_correlation.colour_factor = U32(84, 256, 2 + TRY(stream.read_bits(8)), 258 + TRY(stream.read_bits(16)));
+        lf_channel_correlation.base_correlation_x = TRY(F16(stream));
+        lf_channel_correlation.base_correlation_b = TRY(F16(stream));
+        lf_channel_correlation.x_factor_lf = TRY(F16(stream));
+        lf_channel_correlation.b_factor_lf = TRY(F16(stream));
+    }
+
+    return lf_channel_correlation;
+}
 ///
 
 /// G.1 - LfGlobal
 struct LfGlobal {
     FixedArray<Patch> patches;
     LfChannelDequantization lf_dequant;
+    Quantizer quantizer;
+    HFBlockContext hf_block_ctx;
+    LfChannelCorrelation lf_chan_corr;
     GlobalModular gmodular;
 };
 
@@ -1867,8 +2014,11 @@ static ErrorOr<LfGlobal> read_lf_global(LittleEndianInputBitStream& stream,
 
     lf_global.lf_dequant = TRY(read_lf_channel_dequantization(stream));
 
-    if (frame_header.encoding == Encoding::kVarDCT)
-        TODO();
+    if (frame_header.encoding == Encoding::kVarDCT) {
+        lf_global.quantizer = TRY(read_quantizer(stream));
+        lf_global.hf_block_ctx = TRY(read_hf_block_context(stream));
+        lf_global.lf_chan_corr = TRY(read_lf_channel_correlation(stream));
+    }
 
     lf_global.gmodular = TRY(read_global_modular(stream, frame_size, frame_header, metadata));
 
@@ -1877,25 +2027,25 @@ static ErrorOr<LfGlobal> read_lf_global(LittleEndianInputBitStream& stream,
 ///
 
 /// Helpers to decode groups for the GlobalModular
-static IntRect rect_for_group(Channel const& channel, u32 group_dim, u32 group_index)
+static IntRect rect_for_group(ChannelInfo const& info, u32 group_dim, u32 group_index)
 {
-    u32 horizontal_group_dim = group_dim >> channel.hshift();
-    u32 vertical_group_dim = group_dim >> channel.vshift();
+    u32 horizontal_group_dim = group_dim >> info.hshift;
+    u32 vertical_group_dim = group_dim >> info.vshift;
 
     IntRect rect(0, 0, horizontal_group_dim, vertical_group_dim);
 
-    auto nb_groups_per_row = (channel.width() + horizontal_group_dim - 1) / horizontal_group_dim;
+    auto nb_groups_per_row = (info.width + horizontal_group_dim - 1) / horizontal_group_dim;
     auto group_x = group_index % nb_groups_per_row;
     rect.set_x(group_x * horizontal_group_dim);
-    if (group_x == nb_groups_per_row - 1 && channel.width() % horizontal_group_dim != 0) {
-        rect.set_width(channel.width() % horizontal_group_dim);
+    if (group_x == nb_groups_per_row - 1 && info.width % horizontal_group_dim != 0) {
+        rect.set_width(info.width % horizontal_group_dim);
     }
 
-    auto nb_groups_per_column = (channel.height() + vertical_group_dim - 1) / vertical_group_dim;
+    auto nb_groups_per_column = (info.height + vertical_group_dim - 1) / vertical_group_dim;
     auto group_y = group_index / nb_groups_per_row;
     rect.set_y(group_y * vertical_group_dim);
-    if (group_y == nb_groups_per_column - 1 && channel.height() % vertical_group_dim != 0) {
-        rect.set_height(channel.height() % vertical_group_dim);
+    if (group_y == nb_groups_per_column - 1 && info.height % vertical_group_dim != 0) {
+        rect.set_height(info.height % vertical_group_dim);
     }
 
     return rect;
@@ -1910,7 +2060,7 @@ struct GroupOptions {
     u32 group_dim {};
 };
 
-template<CallableAs<bool, Channel const&> F1, CallableAs<void, Channel&> F2>
+template<CallableAs<bool, Channel const&> F1, CallableAs<void, ChannelInfo const&> F2>
 static ErrorOr<void> read_group_data(
     LittleEndianInputBitStream& stream,
     GroupOptions&& options,
@@ -1926,7 +2076,7 @@ static ErrorOr<void> read_group_data(
         if (!match_decode_conditions(channel))
             continue;
 
-        auto rect_size = rect_for_group(channel, group_dim, group_index).size();
+        auto rect_size = rect_for_group(channel.info(), group_dim, group_index).size();
         TRY(channels_info.try_append({
             .width = static_cast<u32>(rect_size.width()),
             .height = static_cast<u32>(rect_size.height()),
@@ -1939,7 +2089,7 @@ static ErrorOr<void> read_group_data(
         return {};
 
     if constexpr (JPEGXL_DEBUG)
-        debug_print(original_channels[0]);
+        debug_print(original_channels[0].info());
 
     auto decoded = TRY(read_modular_bitstream(stream,
         {
@@ -1954,7 +2104,7 @@ static ErrorOr<void> read_group_data(
 
     // The decoded modular group data is then copied into the partially decoded GlobalModular image in the corresponding positions.
     for (u32 i = 0; i < original_channels.size(); ++i) {
-        auto destination = rect_for_group(original_channels[i], group_dim, group_index);
+        auto destination = rect_for_group(original_channels[i].info(), group_dim, group_index);
         original_channels[i].copy_from(destination, decoded.channels[i]);
     }
 
@@ -1963,6 +2113,20 @@ static ErrorOr<void> read_group_data(
 ///
 
 /// G.2 - LfGroup
+static constexpr i32 DCT_UNINITIALIZED = -2;
+static constexpr i32 DCT_COVERED = -1;
+
+struct VarDCTLfGroup {
+    Channel x_from_y;
+    Channel b_from_y;
+    // dct_select hold DCT information in the top-left corner of every varblock.
+    // -1 means occupied by a varblock but non top-left.
+    // -2 is the default value, which shouldn't be found after proper initialization.
+    Channel dct_select;
+    Channel hf_mul;
+    Channel sharpness;
+};
+
 struct LFGroupOptions {
     GlobalModular& global_modular;
     FrameHeader const& frame_header;
@@ -1971,15 +2135,294 @@ struct LFGroupOptions {
     u32 bit_depth {};
 };
 
+// G.2.2 - LF coefficients
+static ErrorOr<void> read_lf_coefficients(LittleEndianInputBitStream&, FrameHeader const& frame_header)
+{
+    // "If the kUseLfFrame flag in frame_header is set, this subclause is skipped"
+    if (frame_header.flags & FrameHeader::Flags::kUseLfFrame)
+        return {};
+
+    return Error::from_string_literal("JPEGXLLoader: Implement reading LF coefficients");
+}
+
+// I.1 - Transform types
+enum class TransformType : u8 {
+    DCT8x8 = 0,
+    Hornuss = 1,
+    DCT2x2 = 2,
+    DCT4x4 = 3,
+    DCT16x16 = 4,
+    DCT32x32 = 5,
+    DCT16x8 = 6,
+    DCT8x16 = 7,
+    DCT32x8 = 8,
+    DCT8x32 = 9,
+    DCT32x16 = 10,
+    DCT16x32 = 11,
+    DCT4x8 = 12,
+    DCT8x4 = 13,
+    AFV0 = 14,
+    AFV1 = 15,
+    AFV2 = 16,
+    AFV3 = 17,
+    DCT64x64 = 18,
+    DCT64x32 = 19,
+    DCT32x64 = 20,
+    DCT128x128 = 21,
+    DCT128x64 = 22,
+    DCT64x128 = 23,
+    DCT256x256 = 24,
+    DCT256x128 = 25,
+    DCT128x256 = 26,
+};
+
+// NOTE: In the spec, DCT matrices use "matrices order" so DCT16x8 is actually
+//       16 rows and 8 columns. This function return the size in "image order"
+//       with columns first and rows in second.
+static Size<u32> dct_select_to_dct_size(TransformType t)
+{
+    switch (t) {
+    case TransformType::DCT8x8:
+    case TransformType::Hornuss:
+    case TransformType::DCT2x2:
+    case TransformType::DCT4x4:
+        return { 1, 1 };
+    case TransformType::DCT16x16:
+        return { 2, 2 };
+    case TransformType::DCT32x32:
+        return { 4, 4 };
+    case TransformType::DCT16x8:
+        return { 1, 2 };
+    case TransformType::DCT8x16:
+        return { 2, 1 };
+    case TransformType::DCT32x8:
+        return { 1, 4 };
+    case TransformType::DCT8x32:
+        return { 4, 1 };
+    case TransformType::DCT32x16:
+        return { 2, 4 };
+    case TransformType::DCT16x32:
+        return { 4, 2 };
+    case TransformType::DCT4x8:
+    case TransformType::DCT8x4:
+        return { 1, 1 };
+    case TransformType::AFV0:
+    case TransformType::AFV1:
+    case TransformType::AFV2:
+    case TransformType::AFV3:
+        return { 1, 1 };
+    case TransformType::DCT64x64:
+        return { 8, 8 };
+    case TransformType::DCT64x32:
+        return { 4, 8 };
+    case TransformType::DCT32x64:
+        return { 8, 4 };
+    case TransformType::DCT128x128:
+        return { 16, 16 };
+    case TransformType::DCT128x64:
+        return { 8, 16 };
+    case TransformType::DCT64x128:
+        return { 16, 8 };
+    case TransformType::DCT256x256:
+        return { 32, 32 };
+    case TransformType::DCT256x128:
+        return { 16, 32 };
+    case TransformType::DCT128x256:
+        return { 32, 16 };
+    default:
+        VERIFY_NOT_REACHED();
+    }
+}
+
+static Size<u32> dct_select_to_image_size(TransformType t)
+{
+    return dct_select_to_dct_size(t).scaled(8);
+}
+
+// Table I.7 — Order ID for DctSelect values
+static u8 dct_select_to_order_id(TransformType t)
+{
+    switch (t) {
+    case TransformType::DCT8x8:
+        return 0;
+    case TransformType::Hornuss:
+    case TransformType::DCT2x2:
+    case TransformType::DCT4x4:
+    case TransformType::DCT4x8:
+    case TransformType::DCT8x4:
+    case TransformType::AFV0:
+    case TransformType::AFV1:
+    case TransformType::AFV2:
+    case TransformType::AFV3:
+        return 1;
+    case TransformType::DCT16x16:
+        return 2;
+    case TransformType::DCT32x32:
+        return 3;
+    case TransformType::DCT16x8:
+    case TransformType::DCT8x16:
+        return 4;
+    case TransformType::DCT32x8:
+    case TransformType::DCT8x32:
+        return 5;
+    case TransformType::DCT32x16:
+    case TransformType::DCT16x32:
+        return 6;
+    case TransformType::DCT64x64:
+        return 7;
+    case TransformType::DCT64x32:
+    case TransformType::DCT32x64:
+        return 8;
+    case TransformType::DCT128x128:
+        return 9;
+    case TransformType::DCT128x64:
+    case TransformType::DCT64x128:
+        return 10;
+    case TransformType::DCT256x256:
+        return 11;
+    case TransformType::DCT256x128:
+    case TransformType::DCT128x256:
+        return 12;
+    default:
+        VERIFY_NOT_REACHED();
+    }
+}
+
+struct LFGroupVarDCTOptions {
+    Vector<Optional<VarDCTLfGroup>>& group_data;
+    IntSize frame_size;
+    u32 num_lf_group {};
+};
+
+// G.2.4 - HF metadata
+static ErrorOr<void> read_hf_metadata(LittleEndianInputBitStream& stream,
+    LFGroupOptions& options,
+    LFGroupVarDCTOptions const& var_dct_options,
+    u32 lf_group_dim)
+{
+
+    auto group_size = rect_for_group(ChannelInfo::from_size(var_dct_options.frame_size), lf_group_dim, options.group_index).size();
+
+    // "The decoder reads nb_blocks = 1 + u(ceil(log2(ceil(width / 8) * ceil(height / 8))))."
+    u32 nb_blocks = 1 + TRY(stream.read_bits(ceil(log2(ceil_div(group_size.width(), 8) * ceil_div(group_size.height(), 8)))));
+
+    // "Then, the decoder reads a Modular sub-bitstream as described in Annex H, for an image with four channels."
+    Vector<ChannelInfo> channels_info;
+    TRY(channels_info.try_ensure_capacity(4));
+    // "the first two channels have ceil(height / 64) rows and ceil(width / 64) columns"
+    auto color_correlation_channels_size = IntSize { ceil_div(group_size.width(), 64), ceil_div(group_size.height(), 64) };
+    channels_info.unchecked_append(ChannelInfo::from_size(color_correlation_channels_size));
+    channels_info.unchecked_append(ChannelInfo::from_size(color_correlation_channels_size));
+    // "the third channel has two rows and nb_blocks columns"
+    channels_info.unchecked_append(ChannelInfo::from_size(IntSize(nb_blocks, 2)));
+    // "and the fourth channel has ceil(height / 8) rows and ceil(width / 8) columns"
+    channels_info.unchecked_append(ChannelInfo::from_size({ ceil_div(group_size.width(), 8), ceil_div(group_size.height(), 8) }));
+
+    // "The stream index is defined as follows:
+    //  - for ModularLfGroup: 1 + num_lf_groups + LF group index;
+    //  - for HFMetadata: 1 + 2 * num_lf_groups + LF group index;"
+    // We pass ModularLfGroup's stream index in LFGroupOptions, so we
+    // just need to add `num_lf_groups` here.
+    auto stream_index = options.stream_index + var_dct_options.num_lf_group;
+
+    auto decoded_channels = TRY(read_modular_bitstream(stream,
+                                    {
+                                        .channels_info = channels_info,
+                                        .decoder = options.global_modular.decoder,
+                                        .global_tree = options.global_modular.ma_tree,
+                                        .group_dim = lf_group_dim,
+                                        .stream_index = stream_index,
+                                        .apply_transformations = ModularOptions::ApplyTransformations::Yes,
+                                        .bit_depth = options.bit_depth,
+                                    }))
+                                .channels;
+
+    // "The DctSelect and HfMul fields are derived from the first and second rows of BlockInfo.
+    // These two fields have ceil(height / 8) rows and ceil(width / 8) columns."
+    auto derived_size = IntSize(ceil_div(group_size.width(), 8), ceil_div(group_size.height(), 8));
+    auto dct_select = TRY(Channel::create(ChannelInfo::from_size(derived_size)));
+    auto hf_mul = TRY(Channel::create(ChannelInfo::from_size(derived_size)));
+
+    dct_select.fill(DCT_UNINITIALIZED);
+
+    i32 x = 0;
+    i32 y = 0;
+    auto update_next_valid_position = [&]() {
+        // "This position is the earliest block in raster order that is not already covered by
+        // other varblocks. The positioned varblock is completely contained in the current LF
+        // group, does not cross group boundaries, and also does not overlap with
+        // already-positioned varblocks."
+
+        // FIXME: There has to be a smarter way of doing this.
+        while (dct_select.get(x, y) != DCT_UNINITIALIZED) {
+            if (x == derived_size.width() - 1) {
+                x = 0;
+                y += 1;
+                continue;
+            }
+            ++x;
+        }
+    };
+
+    // "They are reconstructed by iterating over the columns of BlockInfo to obtain a varblock
+    // transform type type (the sample at the first row) and a quantization multiplier mul (the
+    // sample at the second row)."
+    auto const& block_info = decoded_channels[2];
+    for (u32 column = 0; column < nb_blocks; ++column) {
+        auto type = block_info.get(column, 0);
+        if (type > 26)
+            return Error::from_string_literal("JPEGXLLoader: Invalid DctSelect value");
+
+        auto mul = block_info.get(column, 1);
+
+        // "The type is a DctSelect sample and is stored at the coordinates of the top-left
+        // 8 × 8 rectangle of the varblock."
+        dct_select.set(x, y, type);
+        // "The HfMul sample is stored at the same position and gets the value 1 + mul."
+        hf_mul.set(x, y, 1 + mul);
+
+        // We fill the whole surface of the varblock as a way to check that
+        // varblocks don't overlap.
+        auto dct_size = dct_select_to_dct_size(static_cast<TransformType>(type));
+        for (u8 y_offset = 0; y_offset < dct_size.height(); ++y_offset) {
+            for (u8 x_offset = 0; x_offset < dct_size.width(); ++x_offset) {
+                if (y_offset == 0 && x_offset == 0)
+                    continue;
+                if (dct_select.get(x + x_offset, y + y_offset) != DCT_UNINITIALIZED)
+                    return Error::from_string_literal("JPEGXLLoader: Invalid varblocks pattern");
+                dct_select.set(x + x_offset, y + y_offset, DCT_COVERED);
+            }
+        }
+        if (column != nb_blocks - 1)
+            update_next_valid_position();
+    }
+
+    // FIXME: Ensure that dct_select contains no DCT_UNINITIALIZED.
+
+    var_dct_options.group_data[options.group_index] = VarDCTLfGroup {
+        .x_from_y = move(decoded_channels[0]),
+        .b_from_y = move(decoded_channels[1]),
+        .dct_select = move(dct_select),
+        .hf_mul = move(hf_mul),
+        .sharpness = move(decoded_channels[2]),
+    };
+    return {};
+}
+
 static ErrorOr<void> read_lf_group(LittleEndianInputBitStream& stream,
-    LFGroupOptions&& options)
+    LFGroupOptions&& options,
+    LFGroupVarDCTOptions&& var_dct_options)
 {
     auto const& [global_modular, frame_header, group_index, stream_index, bit_depth] = options;
 
-    // LF coefficients
-    if (frame_header.encoding == Encoding::kVarDCT) {
-        TODO();
+    if (options.frame_header.encoding == Encoding::kVarDCT) {
+        if (var_dct_options.group_data.is_empty())
+            TRY(var_dct_options.group_data.try_resize(var_dct_options.num_lf_group));
     }
+
+    // LF coefficients
+    if (frame_header.encoding == Encoding::kVarDCT)
+        TRY(read_lf_coefficients(stream, frame_header));
 
     // ModularLfGroup
     u32 lf_group_dim = frame_header.group_dim() * 8;
@@ -2001,14 +2444,125 @@ static ErrorOr<void> read_lf_group(LittleEndianInputBitStream& stream,
             .bit_depth = bit_depth,
             .group_dim = lf_group_dim },
         move(match_decoding_conditions),
-        [&](auto& first_channel) { dbgln("Decoding LFGroup {} for rectangle {}", group_index, rect_for_group(first_channel, lf_group_dim, group_index)); }));
+        [&](auto const& first_channel) { dbgln("Decoding LFGroup {} for rectangle {}", group_index, rect_for_group(first_channel, lf_group_dim, group_index)); }));
 
     // HF metadata
-    if (frame_header.encoding == Encoding::kVarDCT) {
-        TODO();
-    }
+    if (options.frame_header.encoding == Encoding::kVarDCT)
+        TRY(read_hf_metadata(stream, options, var_dct_options, lf_group_dim));
 
     return {};
+}
+///
+
+/// G.3 - HfGlobal
+struct HfGlobalPassMetadata {
+    // I.3.1 - HF coefficient order
+    // 13 Order ID and 3 color component.
+    // These spans refer to either the static, default values or
+    // a Vector of backing_data.
+    DCTOrderDescription order;
+    Vector<Vector<Point<u32>>> backing_data;
+
+    // I.3.3 - HF coefficient histograms
+    u32 nb_block_ctx {};
+    EntropyDecoder decoder;
+};
+
+struct HfGlobal {
+    // Dequantization matrices.
+    u32 num_hf_presets {};
+    FixedArray<HfGlobalPassMetadata> hf_passes;
+};
+
+// I.2.4 - Dequantization matrices
+static ErrorOr<void> read_quantization_matrices(LittleEndianInputBitStream& stream)
+{
+    // "First, the decoder reads a Bool(). If this is true, all matrices have their default encoding."
+    bool is_default = TRY(stream.read_bit());
+
+    if (!is_default)
+        return Error::from_string_literal("JPEGXLLoader: Implement reading quantization matrices");
+
+    return {};
+}
+
+// I.3 - HfPass
+static ErrorOr<void> read_hf_passes(LittleEndianInputBitStream& stream, LfGlobal const& lf_global, HfGlobal& hf_global)
+{
+    // I.3.1 - HF coefficient order
+
+    // "The decoder first reads used_orders as U32(0x5F, 0x13, 0x00, u(13))."
+    u32 used_orders = U32(0x5F, 0x13, 0x00, TRY(stream.read_bits(13)));
+
+    // "If used_orders != 0, it reads 8 pre-clustered distributions as specified in C.1."
+    Optional<EntropyDecoder> decoder;
+    if (used_orders != 0)
+        decoder = TRY(EntropyDecoder::create(stream, 8));
+
+    // "It then reads HF coefficient orders order[p][b][c] as specified by the code below,
+    // where p is the index of the current pass, b is an Order ID (see Table I.7), c is a
+    // component index, and natural_coeff_order[b] is the natural coefficient order for Order
+    // ID b, as specified in I.3.2."
+    auto const& natural_coeff_order = DCTNaturalOrder::the();
+    for (auto& pass_data : hf_global.hf_passes) {
+        for (u8 b = 0; b < 13; b++) {
+            for (u8 c = 0; c < 3; c++) {
+                if ((used_orders & (1 << b)) != 0) {
+                    // "DecodePermutation(b) is defined as follows. The decoder reads a permutation
+                    // nat_ord_perm from a single stream (shared during the above loop) as specified
+                    // in F.3.2, where size is the number of coefficients covered by transforms with
+                    // Order ID b (so size == natural_coeff_order[b].size()) and skip = size / 64.
+                    auto size = natural_coeff_order[b][c].size();
+                    auto nat_ord_perm = TRY(decode_permutations(stream, *decoder, size, size / 64));
+
+                    Vector<Point<u32>> local_order;
+                    TRY(local_order.try_resize(size));
+                    pass_data.order[b][c] = local_order.span();
+                    TRY(pass_data.backing_data.try_append(move(local_order)));
+
+                    for (u32 i = 0; i < nat_ord_perm.size(); ++i)
+                        pass_data.order[b][c][i] = natural_coeff_order[b][c][nat_ord_perm[i]];
+                } else {
+                    pass_data.order[b][c] = natural_coeff_order[b][c];
+                }
+            }
+        }
+
+        // I.3.3 - HF coefficient histograms
+        // "Let nb_block_ctx be equal to max(block_ctx_map) + 1."
+        auto max = lf_global.hf_block_ctx.block_ctx_map[0];
+        for (auto v : lf_global.hf_block_ctx.block_ctx_map) {
+            if (v > max)
+                max = v;
+        }
+        pass_data.nb_block_ctx = max + 1;
+
+        // "The decoder reads a histogram with 495 * num_hf_presets * nb_block_ctx
+        // pre-clustered distributions D from the codestream as specified in C.1."
+        auto distributions = 495 * hf_global.num_hf_presets * pass_data.nb_block_ctx;
+        pass_data.decoder = TRY(EntropyDecoder::create(stream, distributions));
+    }
+
+    if (decoder.has_value())
+        TRY(decoder->ensure_end_state());
+
+    return {};
+}
+
+static ErrorOr<HfGlobal> read_hf_global(LittleEndianInputBitStream& stream, LfGlobal const& lf_global, u32 num_groups, u32 num_passes)
+{
+    HfGlobal hf_global;
+
+    TRY(read_quantization_matrices(stream));
+
+    // I.2.6 - Number of HF decoding presets
+    // "The decoder reads num_hf_presets as u(ceil(log2(num_groups))) + 1."
+    hf_global.num_hf_presets = TRY(stream.read_bits(ceil(log2(num_groups)))) + 1;
+
+    hf_global.hf_passes = TRY(FixedArray<HfGlobalPassMetadata>::create(num_passes));
+    TRY(read_hf_passes(stream, lf_global, hf_global));
+
+    return hf_global;
 }
 ///
 
@@ -2025,6 +2579,7 @@ struct PassGroupModularOptions {
     u32 bit_depth {};
 };
 
+// G.4.2 - Modular group data
 static ErrorOr<void> read_modular_group_data(LittleEndianInputBitStream& stream,
     PassGroupOptions& options,
     PassGroupModularOptions const& modular_options)
@@ -2059,19 +2614,219 @@ static ErrorOr<void> read_modular_group_data(LittleEndianInputBitStream& stream,
             .group_dim = frame_header.group_dim(),
         },
         move(match_decoding_conditions),
-        [&](auto& first_channel) { dbgln_if(JPEGXL_DEBUG, "Decoding pass {} for rectangle {}", options.pass_index, rect_for_group(first_channel, frame_header.group_dim(), group_index)); }));
+        [&](auto const& first_channel) { dbgln_if(JPEGXL_DEBUG, "Decoding pass {} for rectangle {}", options.pass_index, rect_for_group(first_channel, frame_header.group_dim(), group_index)); }));
 
     return {};
 }
 
+struct PassGroupVarDCTOptions {
+    LfGlobal const& lf_global;
+    Vector<Optional<VarDCTLfGroup>> const& lf_groups;
+    HfGlobal& hf_global;
+};
+
+static constexpr Array CoeffFreqContext = to_array<u8>({ 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+    15, 15, 16, 16, 17, 17, 18, 18, 19, 19, 20, 20, 21, 21, 22, 22,
+    23, 23, 23, 23, 24, 24, 24, 24, 25, 25, 25, 25, 26, 26, 26, 26,
+    27, 27, 27, 27, 28, 28, 28, 28, 29, 29, 29, 29, 30, 30, 30, 30 });
+
+static constexpr Array CoeffNumNonzeroContext = to_array<u8>({ 0, 0, 31, 62, 62, 93, 93, 93, 93, 123, 123, 123, 123,
+    152, 152, 152, 152, 152, 152, 152, 152, 180, 180, 180, 180, 180,
+    180, 180, 180, 180, 180, 180, 180, 206, 206, 206, 206, 206, 206,
+    206, 206, 206, 206, 206, 206, 206, 206, 206, 206, 206, 206, 206,
+    206, 206, 206, 206, 206, 206, 206, 206, 206, 206, 206, 206 });
+
+// I.4 - Decoding of quantized HF coefficients
+static ErrorOr<void> read_hf_coefficients(LittleEndianInputBitStream& stream,
+    PassGroupOptions const& options,
+    PassGroupVarDCTOptions&& var_dct_options)
+{
+    auto& hf_global = var_dct_options.hf_global;
+    auto& hf_pass = hf_global.hf_passes[options.pass_index];
+    auto const& hf_group = *var_dct_options.lf_groups[options.group_index];
+
+    auto nb_block_ctx = hf_pass.nb_block_ctx;
+
+    auto hfp = TRY(stream.read_bits(ceil(log2(hf_global.num_hf_presets))));
+    u32 clusters_size = 495 * nb_block_ctx;
+    u32 offset = clusters_size * hfp;
+
+    Optional<ScopeGuard<Function<void()>>> restore_histogram;
+    TRY(hf_pass.decoder.temporarily_restrict_histogram(restore_histogram, offset, clusters_size));
+    auto& decoder = hf_pass.decoder;
+
+    // "After selecting the histogram and coefficient order, the decoder reads symbols
+    // from an entropy-coded stream, as specified in C.3.3."
+
+    // "The decoder proceeds by decoding varblocks in raster order;"
+    auto const& varblock_description = hf_group.dct_select;
+    auto const& order = hf_pass.order;
+
+    Array<Channel, 3> non_zeros_channels = {
+        TRY(Channel::create(varblock_description.info())),
+        TRY(Channel::create(varblock_description.info())),
+        TRY(Channel::create(varblock_description.info()))
+    };
+
+    // "If the kUseLfFrame flag in frame_header is set [...] the quantized LF coefficients LfQuant are all set to −∞, that is,
+    // regardless of lf_thresholds, the value of lf_idx at the end of the function BlockContext() (I.4) is always equal to zero."
+    Array<i32, 3> qdc;
+    qdc.fill(NumericLimits<i32>::min());
+
+    for (u32 y = 0; y < varblock_description.height(); ++y) {
+        for (u32 x = 0; x < varblock_description.width(); ++x) {
+            auto dct_type = varblock_description.get(x, y);
+            if (dct_type == DCT_UNINITIALIZED || dct_type == DCT_COVERED)
+                continue;
+            // "For each varblock of size W × H,"
+            auto transform_type = static_cast<TransformType>(dct_type);
+            auto varblock_size = dct_select_to_image_size(transform_type);
+            auto W = varblock_size.width();
+            auto H = varblock_size.height();
+            // "covering num_blocks = (W / 8) * (H / 8) blocks,"
+            u32 num_blocks = (W / 8) * (H / 8);
+
+            // "s is the Order ID (see Table I.7) of the DctSelect value"
+            auto s = dct_select_to_order_id(transform_type);
+            // "qf is the HfMul value for the current varblock"
+            u32 qf = hf_group.hf_mul.get(x, y);
+
+            // FIXME: Implement this for in-frame LF coefficients.
+            // "qdc[3] are the quantized LF values of LfQuant (G.2.2) corresponding to
+            // (the top-left 8×8 block within) the current varblock (taking into account jpeg_upsampling if needed)."
+
+            // "The lists of thresholds qf_thresholds and lf_thresholds[3], and block_ctx_map are as decoded in LfGlobal"
+            auto const& qf_thresholds = var_dct_options.lf_global.hf_block_ctx.qf_thresholds;
+            auto const& lf_thresholds = var_dct_options.lf_global.hf_block_ctx.lf_thresholds;
+            auto const& block_ctx_map = var_dct_options.lf_global.hf_block_ctx.block_ctx_map;
+
+            // "for each varblock it reads channels Y, X, then B;"
+            // "where c is the current channel (with 0=X, 1=Y, 2=B)" - from the second paragraph of I.4
+            for (u8 c : { 1, 0, 2 }) {
+                auto BlockContext = [&]() -> u32 {
+                    u32 idx = (c < 2 ? c ^ 1 : 2) * 13 + s;
+                    idx *= (qf_thresholds.size() + 1);
+                    for (auto t : qf_thresholds)
+                        if (qf > t)
+                            idx++;
+                    for (u8 i = 0; i < 3; i++)
+                        idx *= (lf_thresholds[i].size() + 1);
+                    u32 lf_idx = 0;
+                    for (auto t : lf_thresholds[0])
+                        if (qdc[0] > t)
+                            lf_idx++;
+                    lf_idx *= (lf_thresholds[2].size() + 1);
+                    for (auto t : lf_thresholds[2])
+                        if (qdc[2] > t)
+                            lf_idx++;
+                    lf_idx *= (lf_thresholds[1].size() + 1);
+                    for (auto t : lf_thresholds[1])
+                        if (qdc[1] > t)
+                            lf_idx++;
+                    return block_ctx_map[idx + lf_idx];
+                };
+
+                auto NonZerosContext = [&](u32 predicted) -> u32 {
+                    if (predicted > 64)
+                        predicted = 64;
+                    if (predicted < 8)
+                        return BlockContext() + nb_block_ctx * predicted;
+                    return BlockContext() + nb_block_ctx * (4 + predicted / 2);
+                };
+
+                auto NonZeros = [&](u32 x, u32 y) -> i32& {
+                    return non_zeros_channels[c].get(x, y);
+                };
+
+                auto PredictedNonZeros = [&](u32 x, u32 y) -> u32 {
+                    if (x == 0 and y == 0)
+                        return 32;
+                    if (x == 0)
+                        return NonZeros(x, y - 1);
+                    if (y == 0)
+                        return NonZeros(x - 1, y);
+                    return (NonZeros(x, y - 1) + NonZeros(x - 1, y) + 1) >> 1;
+                };
+
+                // "the decoder reads an integer non_zeros using
+                // DecodeHybridVarLenUint(NonZerosContext(PredictedNonZeros(x, y)) + offset)."
+                u32 context = NonZerosContext(PredictedNonZeros(x, y));
+                auto non_zeros = TRY(decoder.decode_hybrid_uint(stream, context));
+
+                // The decoder then sets the NonZeros(x, y) value for each block in the
+                // current varblock as follows: for each i in [0, W / 8) and j in [0, H / 8),
+                // NonZeros(x + i, y + j) is set to (non_zeros + num_blocks − 1) Idiv num_blocks.
+                for (u32 j = 0; j < H / 8; ++j) {
+                    for (u32 i = 0; i < W / 8; ++i)
+                        NonZeros(x + i, y + j) = (non_zeros + num_blocks - 1) / num_blocks;
+                }
+
+                // "If non_zeros reaches 0, the decoder stops decoding further coefficients for the current block."
+                if (non_zeros == 0)
+                    continue;
+
+                auto CoefficientContext = [&](u32 k, u32 non_zeros, u32 num_blocks, u32 prev) -> u32 {
+                    non_zeros = (non_zeros + num_blocks - 1) / num_blocks;
+                    k = k / num_blocks;
+                    return (CoeffNumNonzeroContext[non_zeros] + CoeffFreqContext[k]) * 2 + prev + BlockContext() * 458 + 37 * nb_block_ctx;
+                };
+
+                // "Let size = W * H."
+                auto size = W * H;
+                // "For k in the range [num_blocks, size)"
+                u32 last_ucoeff {};
+                for (u32 k = num_blocks; k < size; ++k) {
+                    // "the decoder reads an integer ucoeff from the codestream, using
+                    // DecodeHybridVarLenUint(CoefficientContext(k, non_zeros, num_blocks, size, prev) + offset),
+                    // where prev is computed as specified in the following code:"
+                    auto prev = [&]() -> u32 {
+                        if (k == num_blocks) {
+                            if (non_zeros > size / 16)
+                                return 0;
+                            else
+                                return 1;
+                        } else {
+                            if (last_ucoeff == 0)
+                                return 0;
+                            else
+                                return 1;
+                        }
+                    }();
+
+                    auto ucoeff = TRY(decoder.decode_hybrid_uint(stream, CoefficientContext(k, non_zeros, num_blocks, prev) + offset));
+                    last_ucoeff = ucoeff;
+
+                    // "The decoder then sets the quantized HF coefficient in the position corresponding to index
+                    // order[p][s][c][k] to UnpackSigned(ucoeff), where p is the index of the current pass and s
+                    // and c are the Order ID and current channel index as above."
+                    auto destination = order[s][c][k];
+                    // FIXME: Actually do something with the decoded data.
+                    (void)destination;
+
+                    // "If ucoeff != 0, the decoder decreases non_zeros by 1."
+                    if (ucoeff != 0)
+                        non_zeros -= 1;
+                    // "If non_zeros reaches 0, the decoder stops decoding further coefficients for the current block."
+                    if (non_zeros == 0)
+                        break;
+                }
+            }
+        }
+    }
+
+    TRY(decoder.ensure_end_state());
+
+    return {};
+}
+
+// G.4.1 - General
 static ErrorOr<void> read_pass_group(LittleEndianInputBitStream& stream,
     PassGroupOptions&& options,
-    PassGroupModularOptions&& modular_options)
+    PassGroupModularOptions&& modular_options,
+    PassGroupVarDCTOptions&& var_dct_options)
 {
-    if (options.frame_header.encoding == Encoding::kVarDCT) {
-        (void)stream;
-        TODO();
-    }
+    if (options.frame_header.encoding == Encoding::kVarDCT)
+        TRY(read_hf_coefficients(stream, options, move(var_dct_options)));
 
     TRY(read_modular_group_data(stream, options, modular_options));
 
@@ -2084,6 +2839,8 @@ struct Frame {
     FrameHeader frame_header;
     TOC toc;
     LfGlobal lf_global;
+    Vector<Optional<VarDCTLfGroup>> lf_groups;
+    HfGlobal hf_global;
 
     u64 width {};
     u64 height {};
@@ -2164,6 +2921,10 @@ static ErrorOr<Frame> read_frame(LittleEndianInputBitStream& stream,
     }
 
     auto bits_per_sample = metadata.bit_depth.bits_per_sample;
+    IntSize frame_size { frame.width, frame.height };
+
+    if (frame.frame_header.encoding == Encoding::kVarDCT)
+        TRY(DCTNaturalOrder::initialize());
 
     auto get_stream_for_section = [&](LittleEndianInputBitStream& stream, u32 section_index) -> ErrorOr<MaybeOwned<LittleEndianInputBitStream>> {
         // "If num_groups == 1 and num_passes == 1, then there is a single TOC entry and a single section
@@ -2179,27 +2940,31 @@ static ErrorOr<Frame> read_frame(LittleEndianInputBitStream& stream,
 
     {
         auto lf_stream = TRY(get_stream_for_section(stream, 0));
-        frame.lf_global = TRY(read_lf_global(*lf_stream, { frame.width, frame.height }, frame.frame_header, metadata));
+        frame.lf_global = TRY(read_lf_global(*lf_stream, frame_size, frame.frame_header, metadata));
     }
 
     for (u32 i {}; i < frame.num_lf_groups; ++i) {
         auto lf_stream = TRY(get_stream_for_section(stream, 1 + i));
         // From H.4.1, "The stream index is defined as follows: [...] for ModularLfGroup: 1 + num_lf_groups + LF group index;"
-        TRY(read_lf_group(*lf_stream, {
-                                          .global_modular = frame.lf_global.gmodular,
-                                          .frame_header = frame.frame_header,
-                                          .group_index = i,
-                                          .stream_index = 1 + frame.num_lf_groups + i,
-                                          .bit_depth = bits_per_sample,
-
-                                      }));
+        TRY(read_lf_group(*lf_stream,
+            {
+                .global_modular = frame.lf_global.gmodular,
+                .frame_header = frame.frame_header,
+                .group_index = i,
+                .stream_index = 1 + frame.num_lf_groups + i,
+                .bit_depth = bits_per_sample,
+            },
+            {
+                .group_data = frame.lf_groups,
+                .frame_size = frame_size,
+                .num_lf_group = frame.num_lf_groups,
+            }));
     }
 
     {
-        [[maybe_unused]] auto hf_global_stream = TRY(get_stream_for_section(stream, 1 + frame.num_lf_groups));
-        if (frame.frame_header.encoding == Encoding::kVarDCT) {
-            return Error::from_string_literal("JPEGXLLoader: Read HFGlobal for VarDCT frames");
-        }
+        auto hf_global_stream = TRY(get_stream_for_section(stream, 1 + frame.num_lf_groups));
+        if (frame.frame_header.encoding == Encoding::kVarDCT)
+            frame.hf_global = TRY(read_hf_global(stream, frame.lf_global, frame.num_groups, frame.frame_header.passes.num_passes));
     }
 
     for (u32 pass_index {}; pass_index < frame.frame_header.passes.num_passes; ++pass_index) {
@@ -2217,7 +2982,12 @@ static ErrorOr<Frame> read_frame(LittleEndianInputBitStream& stream,
                     .pass_index = pass_index,
                     .stream_index = stream_index,
                 },
-                { .bit_depth = bits_per_sample }));
+                { .bit_depth = bits_per_sample },
+                {
+                    .lf_global = frame.lf_global,
+                    .lf_groups = frame.lf_groups,
+                    .hf_global = frame.hf_global,
+                }));
         }
     }
 
@@ -2797,9 +3567,7 @@ public:
             if (m_metadata.preview.has_value())
                 TODO();
 
-            TRY(decode_frame());
-
-            while (!m_frames.last().frame_header.is_last)
+            while (m_frames.is_empty() || !m_frames.last().frame_header.is_last)
                 TRY(decode_frame());
 
             TRY(render_frame());
