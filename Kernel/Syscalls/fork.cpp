@@ -21,8 +21,7 @@ ErrorOr<FlatPtr> Process::sys$fork(RegisterState& regs)
     VERIFY_NO_PROCESS_BIG_LOCK(this);
     TRY(require_promise(Pledge::proc));
 
-    auto credentials = this->credentials();
-    auto child_and_first_thread = TRY(Process::create_with_forked_name(credentials->uid(), credentials->gid(), pid(), m_is_kernel_process, vfs_root_context(), hostname_context(), current_directory(), executable(), tty(), this));
+    auto child_and_first_thread = TRY(Process::create_from_fork(*this));
     auto& child = child_and_first_thread.process;
     auto& child_first_thread = child_and_first_thread.first_thread;
 
@@ -154,12 +153,7 @@ ErrorOr<FlatPtr> Process::sys$fork(RegisterState& regs)
         }
     });
 
-    Process::register_new(*child);
-
-    // NOTE: All user processes have a leaked ref on them. It's balanced by Thread::WaitBlockerSet::finalize().
-    child->ref();
-
-    PerformanceManager::add_process_created_event(*child);
+    commit_creation(child);
 
     SpinlockLocker lock(g_scheduler_lock);
     child_first_thread->set_affinity(Thread::current()->affinity());

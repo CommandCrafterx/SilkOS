@@ -211,7 +211,7 @@ void Process::register_new(Process& process)
     });
 }
 
-ErrorOr<Process::ProcessAndFirstThread> Process::create_user_process(StringView path, UserID uid, GroupID gid, Vector<NonnullOwnPtr<KString>> arguments, Vector<NonnullOwnPtr<KString>> environment, NonnullRefPtr<VFSRootContext> vfs_root_context, NonnullRefPtr<HostnameContext> hostname_context, RefPtr<TTY> tty)
+ErrorOr<Process::ProcessAndFirstThread> Process::create_userland_init_process(StringView path, Vector<NonnullOwnPtr<KString>> arguments, NonnullRefPtr<VFSRootContext> vfs_root_context, NonnullRefPtr<HostnameContext> hostname_context, RefPtr<TTY> tty)
 {
     auto parts = path.split_view('/');
     if (arguments.is_empty()) {
@@ -224,7 +224,7 @@ ErrorOr<Process::ProcessAndFirstThread> Process::create_user_process(StringView 
     auto vfs_root_context_root_custody = vfs_root_context->root_custody().with([](auto& custody) -> NonnullRefPtr<Custody> {
         return custody;
     });
-    auto [process, first_thread] = TRY(Process::create(parts.last(), uid, gid, ProcessID(0), false, vfs_root_context, hostname_context, vfs_root_context_root_custody, nullptr, tty));
+    auto [process, first_thread] = TRY(Process::create_spawned(UserID(0), GroupID(0), ProcessID(0), vfs_root_context, hostname_context, vfs_root_context_root_custody, tty));
 
     TRY(process->m_fds.with_exclusive([&](auto& fds) -> ErrorOr<void> {
         TRY(fds.try_resize(Process::OpenFileDescriptions::max_open()));
@@ -246,12 +246,9 @@ ErrorOr<Process::ProcessAndFirstThread> Process::create_user_process(StringView 
 
     Thread* new_main_thread = nullptr;
     InterruptsState previous_interrupts_state = InterruptsState::Enabled;
-    TRY(process->exec(move(path_string), move(arguments), move(environment), new_main_thread, previous_interrupts_state));
+    TRY(process->exec(move(path_string), move(arguments), {}, new_main_thread, previous_interrupts_state, ProcessEventType::Create));
 
-    register_new(*process);
-
-    // NOTE: All user processes have a leaked ref on them. It's balanced by Thread::WaitBlockerSet::finalize().
-    process->ref();
+    commit_creation(process);
 
     {
         SpinlockLocker lock(g_scheduler_lock);
@@ -264,7 +261,7 @@ ErrorOr<Process::ProcessAndFirstThread> Process::create_user_process(StringView 
 ErrorOr<Process::ProcessAndFirstThread> Process::create_kernel_process(StringView name, void (*entry)(void*), void* entry_data, u32 affinity, RegisterProcess do_register)
 {
     VERIFY(s_empty_kernel_hostname_context);
-    auto process_and_first_thread = TRY(Process::create(name, UserID(0), GroupID(0), ProcessID(0), true, VFSRootContext::empty_context_for_kernel_processes(), *s_empty_kernel_hostname_context));
+    auto process_and_first_thread = TRY(Process::create_impl(name, UserID(0), GroupID(0), ProcessID(0), true, VFSRootContext::empty_context_for_kernel_processes(), *s_empty_kernel_hostname_context));
     auto& process = *process_and_first_thread.process;
     auto& thread = *process_and_first_thread.first_thread;
 
@@ -293,16 +290,35 @@ void Process::unprotect_data()
     });
 }
 
-ErrorOr<Process::ProcessAndFirstThread> Process::create_with_forked_name(UserID uid, GroupID gid, ProcessID ppid, bool is_kernel_process, NonnullRefPtr<VFSRootContext> vfs_root_context, NonnullRefPtr<HostnameContext> hostname_context, RefPtr<Custody> current_directory, RefPtr<Custody> executable, RefPtr<TTY> tty, Process* fork_parent)
+ErrorOr<Process::ProcessAndFirstThread> Process::create_from_fork(Process& parent)
 {
+    VERIFY(!parent.is_kernel_process());
+    auto const& credentials = parent.credentials();
+
     Process::Name name {};
-    Process::current().name().with([&name](auto& process_name) {
+    parent.name().with([&name](auto& process_name) {
         name.store_characters(process_name.representable_view());
     });
-    return TRY(Process::create(name.representable_view(), uid, gid, ppid, is_kernel_process, move(vfs_root_context), move(hostname_context), current_directory, executable, tty, fork_parent));
+
+    return Process::create_impl(name.representable_view(),
+        credentials->uid(), credentials->gid(), parent.pid(),
+        parent.is_kernel_process(), parent.vfs_root_context(),
+        parent.hostname_context(), parent.current_directory(),
+        parent.executable(), parent.tty(), &parent);
 }
 
-ErrorOr<Process::ProcessAndFirstThread> Process::create(StringView name, UserID uid, GroupID gid, ProcessID ppid, bool is_kernel_process, NonnullRefPtr<VFSRootContext> vfs_root_context, NonnullRefPtr<HostnameContext> hostname_context, RefPtr<Custody> current_directory, RefPtr<Custody> executable, RefPtr<TTY> tty, Process* fork_parent)
+ErrorOr<Process::ProcessAndFirstThread> Process::create_spawned(UserID uid, GroupID gid, ProcessID ppid, NonnullRefPtr<VFSRootContext> vfs_root_context, NonnullRefPtr<HostnameContext> hostname_context, NonnullRefPtr<Custody> current_directory, RefPtr<TTY> tty)
+{
+    // This name shouldn't be visible as we will `exec` on this process before
+    // commiting it.
+    return Process::create_impl("PLACEHOLDER NAME"sv,
+        uid, gid, ppid,
+        false, vfs_root_context,
+        hostname_context, current_directory,
+        nullptr, tty, nullptr);
+}
+
+ErrorOr<Process::ProcessAndFirstThread> Process::create_impl(StringView name, UserID uid, GroupID gid, ProcessID ppid, bool is_kernel_process, NonnullRefPtr<VFSRootContext> vfs_root_context, NonnullRefPtr<HostnameContext> hostname_context, RefPtr<Custody> current_directory, RefPtr<Custody> executable, RefPtr<TTY> tty, Process* fork_parent)
 {
     auto unveil_tree = UnveilNode { TRY(KString::try_create("/"sv)), UnveilMetadata(TRY(KString::try_create("/"sv))) };
     auto exec_unveil_tree = UnveilNode { TRY(KString::try_create("/"sv)), UnveilMetadata(TRY(KString::try_create("/"sv))) };
@@ -323,6 +339,20 @@ ErrorOr<Process::ProcessAndFirstThread> Process::create(StringView name, UserID 
     auto first_thread = TRY(process->attach_resources(new_address_space.release_nonnull(), fork_parent));
 
     return ProcessAndFirstThread { move(process), move(first_thread) };
+}
+
+void Process::commit_creation(NonnullRefPtr<Process>& process)
+{
+    if (!process->m_is_kernel_process) {
+        Process::register_new(*process);
+
+        // NOTE: All user processes have a leaked ref on them. It's balanced by Thread::WaitBlockerSet::finalize().
+        process->ref();
+    }
+
+    // PERF_EVENT_PROCESS_CREATE for spawned processes is emitted when calling `exec`.
+    if (process->m_is_kernel_process || process->executable())
+        PerformanceManager::add_process_created_event(*process);
 }
 
 Process::Process(StringView name, NonnullRefPtr<Credentials> credentials, ProcessID ppid, bool is_kernel_process, NonnullRefPtr<VFSRootContext> vfs_root_context, NonnullRefPtr<HostnameContext> hostname_context, RefPtr<Custody> current_directory, RefPtr<Custody> executable, RefPtr<TTY> tty, UnveilNode unveil_tree, UnveilNode exec_unveil_tree, UnixDateTime creation_time)
@@ -1315,6 +1345,7 @@ RecursiveSpinlockProtected<Process::Name, LockRank::None> const& Process::name()
 
 void Process::set_name(StringView name)
 {
+    VERIFY(!name.is_empty());
     m_name.with([name](auto& process_name) {
         process_name.store_characters(name);
     });

@@ -217,7 +217,7 @@ public:
     }
 
     static ErrorOr<ProcessAndFirstThread> create_kernel_process(StringView name, void (*entry)(void*), void* entry_data = nullptr, u32 affinity = THREAD_AFFINITY_DEFAULT, RegisterProcess do_register = RegisterProcess::Yes);
-    static ErrorOr<ProcessAndFirstThread> create_user_process(StringView path, UserID, GroupID, Vector<NonnullOwnPtr<KString>> arguments, Vector<NonnullOwnPtr<KString>> environment, NonnullRefPtr<VFSRootContext>, NonnullRefPtr<HostnameContext>, RefPtr<TTY>);
+    static ErrorOr<ProcessAndFirstThread> create_userland_init_process(StringView path, Vector<NonnullOwnPtr<KString>> arguments, NonnullRefPtr<VFSRootContext>, NonnullRefPtr<HostnameContext>, RefPtr<TTY>);
     static void register_new(Process&);
 
     ~Process();
@@ -541,7 +541,7 @@ public:
     Vector<NonnullOwnPtr<KString>> const& arguments() const { return m_arguments; }
     Vector<NonnullOwnPtr<KString>> const& environment() const { return m_environment; }
 
-    ErrorOr<void> exec(NonnullOwnPtr<KString> path, Vector<NonnullOwnPtr<KString>> arguments, Vector<NonnullOwnPtr<KString>> environment, Thread*& new_main_thread, InterruptsState& previous_interrupts_state, int recursion_depth = 0);
+    ErrorOr<void> exec(NonnullOwnPtr<KString> path, Vector<NonnullOwnPtr<KString>> arguments, Vector<NonnullOwnPtr<KString>> environment, Thread*& new_main_thread, InterruptsState& previous_interrupts_state, ProcessEventType event_type = ProcessEventType::Exec, int recursion_depth = 0);
 
     ErrorOr<LoadResult> load(Memory::AddressSpace& new_space, NonnullRefPtr<OpenFileDescription> main_program_description, RefPtr<OpenFileDescription> interpreter_description, Elf_Ehdr const& main_program_header, Optional<size_t> minimum_stack_size = {});
 
@@ -705,8 +705,14 @@ private:
     bool remove_thread(Thread&);
 
     Process(StringView name, NonnullRefPtr<Credentials>, ProcessID ppid, bool is_kernel_process, NonnullRefPtr<VFSRootContext>, NonnullRefPtr<HostnameContext>, RefPtr<Custody> current_directory, RefPtr<Custody> executable, RefPtr<TTY> tty, UnveilNode unveil_tree, UnveilNode exec_unveil_tree, UnixDateTime creation_time);
-    static ErrorOr<ProcessAndFirstThread> create_with_forked_name(UserID, GroupID, ProcessID ppid, bool is_kernel_process, NonnullRefPtr<VFSRootContext> vfs_root_context, NonnullRefPtr<HostnameContext>, RefPtr<Custody> current_directory = nullptr, RefPtr<Custody> executable = nullptr, RefPtr<TTY> = nullptr, Process* fork_parent = nullptr);
-    static ErrorOr<ProcessAndFirstThread> create(StringView name, UserID, GroupID, ProcessID ppid, bool is_kernel_process, NonnullRefPtr<VFSRootContext> vfs_root_context, NonnullRefPtr<HostnameContext>, RefPtr<Custody> current_directory = nullptr, RefPtr<Custody> executable = nullptr, RefPtr<TTY> = nullptr, Process* fork_parent = nullptr);
+    static ErrorOr<ProcessAndFirstThread> create_from_fork(Process& parent);
+    static ErrorOr<ProcessAndFirstThread> create_spawned(UserID, GroupID, ProcessID ppid, NonnullRefPtr<VFSRootContext> vfs_root_context, NonnullRefPtr<HostnameContext>, NonnullRefPtr<Custody> current_directory, RefPtr<TTY>);
+    static ErrorOr<ProcessAndFirstThread> create_impl(StringView name, UserID, GroupID, ProcessID ppid, bool is_kernel_process, NonnullRefPtr<VFSRootContext> vfs_root_context, NonnullRefPtr<HostnameContext>, RefPtr<Custody> current_directory = nullptr, RefPtr<Custody> executable = nullptr, RefPtr<TTY> = nullptr, Process* fork_parent = nullptr);
+    // After calling one of the create_* function, you need to commit the creation of the process.
+    // You have to make sure that nothing will fail after calling this function otherwise the
+    // process will be leaked.
+    static void commit_creation(NonnullRefPtr<Process>&);
+
     ErrorOr<NonnullRefPtr<Thread>> attach_resources(NonnullOwnPtr<Memory::AddressSpace>&&, Process* fork_parent);
     static ProcessID allocate_pid();
 
@@ -717,7 +723,9 @@ private:
     bool create_perf_events_buffer_if_needed();
     void delete_perf_events_buffer();
 
-    ErrorOr<void> do_exec(NonnullRefPtr<OpenFileDescription> main_program_description, Vector<NonnullOwnPtr<KString>> arguments, Vector<NonnullOwnPtr<KString>> environment, RefPtr<OpenFileDescription> interpreter_description, Thread*& new_main_thread, InterruptsState& previous_interrupts_state, Elf_Ehdr const& main_program_header, Optional<size_t> minimum_stack_size = {});
+    ErrorOr<void> do_exec(NonnullRefPtr<OpenFileDescription> main_program_description, Vector<NonnullOwnPtr<KString>> arguments,
+        Vector<NonnullOwnPtr<KString>> environment, RefPtr<OpenFileDescription> interpreter_description, Thread*& new_main_thread,
+        InterruptsState& previous_interrupts_state, Elf_Ehdr const& main_program_header, ProcessEventType, Optional<size_t> minimum_stack_size = {});
     ErrorOr<FlatPtr> do_write(OpenFileDescription&, UserOrKernelBuffer const&, size_t, Optional<off_t> = {});
 
     ErrorOr<FlatPtr> do_statvfs(FileSystem const& path, Custody const*, statvfs* buf);

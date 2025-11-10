@@ -62,8 +62,9 @@ ErrorOr<FlatPtr> Process::sys$posix_spawn(Userspace<Syscall::SC_posix_spawn_para
     Vector<NonnullOwnPtr<KString>> environment;
     TRY(copy_user_strings(params.environment, environment));
 
-    auto credentials = this->credentials();
-    auto [child, child_first_thread] = TRY(Process::create({}, credentials->uid(), credentials->gid(), pid(), m_is_kernel_process, vfs_root_context(), hostname_context(), current_directory(), nullptr, tty(), nullptr));
+    auto const& credentials = this->credentials();
+    VERIFY(!m_is_kernel_process);
+    auto [child, child_first_thread] = TRY(Process::create_spawned(credentials->uid(), credentials->gid(), pid(), vfs_root_context(), hostname_context(), current_directory(), tty()));
 
     ArmedScopeGuard thread_finalizer_guard = [&child_first_thread]() {
         SpinlockLocker lock(g_scheduler_lock);
@@ -102,7 +103,7 @@ ErrorOr<FlatPtr> Process::sys$posix_spawn(Userspace<Syscall::SC_posix_spawn_para
 
     Thread* new_main_thread = nullptr;
     InterruptsState previous_interrupts_state = InterruptsState::Enabled;
-    TRY(child->exec(move(path), move(arguments), move(environment), new_main_thread, previous_interrupts_state));
+    TRY(child->exec(move(path), move(arguments), move(environment), new_main_thread, previous_interrupts_state, ProcessEventType::Create));
     thread_finalizer_guard.disarm();
 
     m_scoped_process_list.with([&](auto const& list_ptr) {
@@ -114,12 +115,7 @@ ErrorOr<FlatPtr> Process::sys$posix_spawn(Userspace<Syscall::SC_posix_spawn_para
         }
     });
 
-    Process::register_new(*child);
-
-    // NOTE: All user processes have a leaked ref on them. It's balanced by Thread::WaitBlockerSet::finalize().
-    child->ref();
-
-    PerformanceManager::add_process_created_event(*child);
+    commit_creation(child);
 
     SpinlockLocker lock(g_scheduler_lock);
     new_main_thread->set_affinity(Thread::current()->affinity());
