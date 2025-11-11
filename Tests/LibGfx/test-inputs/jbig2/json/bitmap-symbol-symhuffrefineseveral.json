@@ -24,7 +24,7 @@
             "retained": true,
             "data": {
                 "flags": {
-                    "uses_huffman_encoding": false,
+                    "uses_huffman_encoding": true,
                     "uses_refinement_or_aggregate_coding": false,
                     "huffman_table_selection_for_height_differences": 0,
                     "huffman_table_selection_for_width_differences": 0,
@@ -121,7 +121,7 @@
             ],
             "data": {
                 "flags": {
-                    "uses_huffman_encoding": false,
+                    "uses_huffman_encoding": true,
                     "uses_refinement_or_aggregate_coding": true,
                     "huffman_table_selection_for_height_differences": 0,
                     "huffman_table_selection_for_width_differences": 0,
@@ -182,7 +182,7 @@
                     "height": 400
                 },
                 "flags": {
-                    "uses_huffman_encoding": false,
+                    "uses_huffman_encoding": true,
                     "uses_refinement_coding": false,
                     "strip_size": 2,
                     "reference_corner": "top_left",

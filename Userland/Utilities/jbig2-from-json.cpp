@@ -489,6 +489,7 @@ static ErrorOr<Gfx::JBIG2::SymbolDictionarySegmentData::HeightClass::RefinedSymb
     i32 delta_x_offset = 0;
     i32 delta_y_offset = 0;
     RefPtr<Gfx::BilevelImage> image;
+    Gfx::MQArithmeticEncoder::Trailing7FFFHandling trailing_7fff_handling { Gfx::MQArithmeticEncoder::Trailing7FFFHandling::Keep };
     TRY(object.try_for_each_member([&](StringView key, JsonValue const& value) -> ErrorOr<void> {
         if (key == "symbol_id"sv) {
             if (auto symbol_id_json = value.get_uint(); symbol_id_json.has_value()) {
@@ -522,6 +523,11 @@ static ErrorOr<Gfx::JBIG2::SymbolDictionarySegmentData::HeightClass::RefinedSymb
             return Error::from_string_literal("expected object for \"image_data\"");
         }
 
+        if (key == "strip_trailing_7fffs"sv) {
+            trailing_7fff_handling = TRY(jbig2_trailing_7fff_handling_from_json(value));
+            return {};
+        }
+
         dbgln("symbol_dict symbol refines_symbol_to key {}", key);
         return Error::from_string_literal("unknown symbol_dict symbol refines_symbol_to key");
     }));
@@ -534,17 +540,45 @@ static ErrorOr<Gfx::JBIG2::SymbolDictionarySegmentData::HeightClass::RefinedSymb
         delta_x_offset,
         delta_y_offset,
         *image,
+        trailing_7fff_handling,
     };
 }
 
 static ErrorOr<Vector<Gfx::JBIG2::TextRegionStrip>> jbig2_text_region_strips_from_json(ToJSONOptions const& options, JsonArray const& array);
+
+static ErrorOr<Gfx::JBIG2::SymbolDictionarySegmentData::HeightClass::RefinesUsingStrips> jbig2_symbol_dictionary_refines_using_strips_from_json(ToJSONOptions const& options, JsonObject const& object)
+{
+    Gfx::JBIG2::SymbolDictionarySegmentData::HeightClass::RefinesUsingStrips refines_using_strips;
+    TRY(object.try_for_each_member([&](StringView key, JsonValue const& value) -> ErrorOr<void> {
+        if (key == "initial_strip_t"sv) {
+            if (auto initial_strip_t = value.get_i32(); initial_strip_t.has_value()) {
+                refines_using_strips.initial_strip_t = initial_strip_t.value();
+                return {};
+            }
+            return Error::from_string_literal("expected i32 for \"initial_strip_t\"");
+        }
+
+        if (key == "strips"sv) {
+            if (value.is_array()) {
+                refines_using_strips.strips = TRY(jbig2_text_region_strips_from_json(options, value.as_array()));
+                return {};
+            }
+            return Error::from_string_literal("expected array for \"strips\"");
+        }
+
+        dbgln("symbol_dict symbol refines_using_strips key {}", key);
+        return Error::from_string_literal("unknown symbol_dict symbol refines_using_strips key");
+    }));
+
+    return refines_using_strips;
+}
 
 static ErrorOr<Gfx::JBIG2::SymbolDictionarySegmentData::HeightClass::Symbol> jbig2_symbol_dictionary_height_class_symbol_from_json(ToJSONOptions const& options, JsonObject const& object)
 {
     bool is_exported = true;
     Optional<i32> width;
     Optional<i32> height;
-    Optional<Variant<NonnullRefPtr<Gfx::BilevelImage>, Gfx::JBIG2::SymbolDictionarySegmentData::HeightClass::RefinedSymbol, Vector<Gfx::JBIG2::TextRegionStrip>>> image;
+    Optional<Variant<NonnullRefPtr<Gfx::BilevelImage>, Gfx::JBIG2::SymbolDictionarySegmentData::HeightClass::RefinedSymbol, Gfx::JBIG2::SymbolDictionarySegmentData::HeightClass::RefinesUsingStrips>> image;
     Gfx::IntSize size;
 
     TRY(object.try_for_each_member([&](StringView key, JsonValue const& value) -> ErrorOr<void> {
@@ -581,11 +615,12 @@ static ErrorOr<Gfx::JBIG2::SymbolDictionarySegmentData::HeightClass::Symbol> jbi
         }
 
         if (key == "refines_using_strips"sv) {
-            if (value.is_array()) {
-                image = TRY(jbig2_text_region_strips_from_json(options, value.as_array()));
+            if (value.is_object()) {
+                auto refines_using_strips = TRY(jbig2_symbol_dictionary_refines_using_strips_from_json(options, value.as_object()));
+                image = move(refines_using_strips);
                 return {};
             }
-            return Error::from_string_literal("expected array for \"refines_using_strips\"");
+            return Error::from_string_literal("expected object for \"refines_using_strips\"");
         }
 
         if (key == "width"sv) {
@@ -611,11 +646,11 @@ static ErrorOr<Gfx::JBIG2::SymbolDictionarySegmentData::HeightClass::Symbol> jbi
     if (!image.has_value())
         return Error::from_string_literal("\"symbol\" missing \"image_data\" or \"refines_symbol_to\"");
 
-    if (width.has_value() != image->has<Vector<Gfx::JBIG2::TextRegionStrip>>())
+    if (width.has_value() != image->has<Gfx::JBIG2::SymbolDictionarySegmentData::HeightClass::RefinesUsingStrips>())
         return Error::from_string_literal("symbol \"width\" should be present exactly for \"refines_using_strips\" entries");
-    if (height.has_value() != image->has<Vector<Gfx::JBIG2::TextRegionStrip>>())
+    if (height.has_value() != image->has<Gfx::JBIG2::SymbolDictionarySegmentData::HeightClass::RefinesUsingStrips>())
         return Error::from_string_literal("symbol \"height\" should be present exactly for \"refines_using_strips\" entries");
-    if (image->has<Vector<Gfx::JBIG2::TextRegionStrip>>())
+    if (image->has<Gfx::JBIG2::SymbolDictionarySegmentData::HeightClass::RefinesUsingStrips>())
         size = { width.value(), height.value() };
 
     return Gfx::JBIG2::SymbolDictionarySegmentData::HeightClass::Symbol {

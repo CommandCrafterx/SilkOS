@@ -106,11 +106,20 @@ struct SymbolDictionarySegmentData {
             i32 delta_x_offset { 0 };
             i32 delta_y_offset { 0 };
             NonnullRefPtr<BilevelImage> refines_to;
+
+            // For refinement data embedded in a huffman coded text region segment.
+            MQArithmeticEncoder::Trailing7FFFHandling trailing_7fff_handling { MQArithmeticEncoder::Trailing7FFFHandling::Keep };
         };
+
+        struct RefinesUsingStrips {
+            i32 initial_strip_t { 0 };
+            Vector<TextRegionStrip> strips;
+        };
+
         struct Symbol {
             Gfx::IntSize size;
             bool is_exported { true };
-            Variant<NonnullRefPtr<BilevelImage>, RefinedSymbol, Vector<TextRegionStrip>> image;
+            Variant<NonnullRefPtr<BilevelImage>, RefinedSymbol, RefinesUsingStrips> image;
         };
 
         Vector<Symbol> symbols;

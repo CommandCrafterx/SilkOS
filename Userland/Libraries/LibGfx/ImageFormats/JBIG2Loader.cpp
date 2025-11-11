@@ -1383,7 +1383,7 @@ struct TextRegionDecodingInputParameters {
     // FIXME: COLEXTFLAG, SBCOLS
 
     // If uses_huffman_encoding is true, text_region_decoding_procedure() reads data off this stream.
-    Stream* stream { nullptr };
+    BigEndianInputBitStream* bit_stream { nullptr };
 
     // If uses_huffman_encoding is false, text_region_decoding_procedure() reads data off this decoder.
     MQArithmeticDecoder* arithmetic_decoder { nullptr };
@@ -1410,13 +1410,12 @@ struct TextContexts {
 // 6.4 Text Region Decoding Procedure
 static ErrorOr<NonnullRefPtr<BilevelImage>> text_region_decoding_procedure(TextRegionDecodingInputParameters const& inputs, Optional<TextContexts>& text_contexts, Optional<RefinementContexts>& refinement_contexts)
 {
-    Optional<BigEndianInputBitStream> bit_stream;
+    BigEndianInputBitStream* bit_stream = nullptr;
     MQArithmeticDecoder* decoder = nullptr;
-    if (inputs.uses_huffman_encoding) {
-        bit_stream = BigEndianInputBitStream { MaybeOwned { *inputs.stream } };
-    } else {
+    if (inputs.uses_huffman_encoding)
+        bit_stream = inputs.bit_stream;
+    else
         decoder = inputs.arithmetic_decoder;
-    }
 
     // 6.4.6 Strip delta T
     // "If SBHUFF is 1, decode a value using the Huffman table specified by SBHUFFDT and multiply the resulting value by SBSTRIPS.
@@ -1800,15 +1799,19 @@ static ErrorOr<Vector<BilevelSubImage>> symbol_dictionary_decoding_procedure(Sym
     // This belongs in 6.5.5 1) below, but also needs to be captured by read_symbol_bitmap here.
     Vector<BilevelSubImage> new_symbols;
 
+    // Likewise, this is from 6.5.8.2.3 below.
+    Vector<JBIG2::Code> symbol_id_codes;
+    Optional<JBIG2::HuffmanTable> symbol_id_table_storage;
+
     auto read_symbol_bitmap = [&](u32 width, u32 height) -> ErrorOr<NonnullRefPtr<BilevelImage>> {
         // 6.5.8 Symbol bitmap
-        if (inputs.uses_huffman_encoding)
-            return Error::from_string_literal("JBIG2ImageDecoderPlugin: Cannot decode generic symbol bitmaps with huffman encoding");
 
         // 6.5.8.1 Direct-coded symbol bitmap
         // "If SDREFAGG is 0, then decode the symbol's bitmap using a generic region decoding procedure as described in 6.2.
         //  Set the parameters to this decoding procedure as shown in Table 16."
         if (!inputs.uses_refinement_or_aggregate_coding) {
+            VERIFY(!inputs.uses_huffman_encoding);
+
             // Table 16 – Parameters used to decode a symbol's bitmap using generic bitmap decoding
             GenericRegionDecodingInputParameters generic_inputs;
             generic_inputs.is_modified_modified_read = false;
@@ -1828,8 +1831,16 @@ static ErrorOr<Vector<BilevelSubImage>> symbol_dictionary_decoding_procedure(Sym
         dbgln_if(JBIG2_DEBUG, "Number of symbol instances: {}", number_of_symbol_instances);
 
         // 6.5.8.2.3 Setting SBSYMCODES and SBSYMCODELEN
-        // FIXME: Implement support for SDHUFF = 1
-        u32 code_length = ceil(log2(inputs.input_symbols.size() + inputs.number_of_new_symbols));
+        u32 number_of_symbols = inputs.input_symbols.size() + inputs.number_of_new_symbols; // "SBNUMSYMS" in spec.
+        u32 code_length = ceil(log2(number_of_symbols));                                    // "SBSYMCODELEN" in spec.
+        JBIG2::HuffmanTable const* symbol_id_table { nullptr };
+        if (inputs.uses_huffman_encoding) {
+            if (!symbol_id_table_storage.has_value()) {
+                symbol_id_codes = TRY(JBIG2::uniform_huffman_codes(number_of_symbols, max(code_length, 1u)));
+                symbol_id_table_storage = JBIG2::HuffmanTable { symbol_id_codes };
+            }
+            symbol_id_table = &symbol_id_table_storage.value();
+        }
 
         if (!text_contexts.has_value())
             text_contexts = TextContexts { code_length };
@@ -1848,6 +1859,7 @@ static ErrorOr<Vector<BilevelSubImage>> symbol_dictionary_decoding_procedure(Sym
             text_inputs.region_height = height;
             text_inputs.number_of_instances = number_of_symbol_instances;
             text_inputs.size_of_symbol_instance_strips = 1;
+            text_inputs.symbol_id_table = symbol_id_table;
             text_inputs.id_symbol_code_length = code_length;
 
             // 6.5.8.2.4 Setting SBSYMS
@@ -1872,23 +1884,52 @@ static ErrorOr<Vector<BilevelSubImage>> symbol_dictionary_decoding_procedure(Sym
             text_inputs.refinement_template = inputs.refinement_template;
             text_inputs.refinement_adaptive_template_pixels = inputs.refinement_adaptive_template_pixels;
 
-            text_inputs.arithmetic_decoder = &decoder.value();
+            if (inputs.uses_huffman_encoding)
+                text_inputs.bit_stream = &bit_stream.value();
+            else
+                text_inputs.arithmetic_decoder = &decoder.value();
             return text_region_decoding_procedure(text_inputs, text_contexts, refinement_contexts);
         }
 
         // "3) If REFAGGNINST is equal to one, then decode the bitmap as described in 6.5.8.2.2."
 
         // 6.5.8.2.2 Decoding a bitmap when REFAGGNINST = 1
-        // FIXME: This is missing some steps for the SDHUFF = 1 case.
         if (number_of_symbol_instances != 1)
             return Error::from_string_literal("JBIG2ImageDecoderPlugin: Unexpected number of symbol instances");
 
-        u32 symbol_id = text_contexts->id_decoder.decode(*decoder);
-        i32 refinement_x_offset = TRY(text_contexts->refinement_x_offset_decoder.decode_non_oob(*decoder));
-        i32 refinement_y_offset = TRY(text_contexts->refinement_y_offset_decoder.decode_non_oob(*decoder));
+        u32 symbol_id;
+        if (inputs.uses_huffman_encoding)
+            symbol_id = TRY(symbol_id_table->read_symbol_non_oob(*bit_stream));
+        else
+            symbol_id = text_contexts->id_decoder.decode(*decoder);
+
+        i32 refinement_x_offset;
+        if (inputs.uses_huffman_encoding)
+            refinement_x_offset = TRY(TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_15))->read_symbol_non_oob(*bit_stream));
+        else
+            refinement_x_offset = TRY(text_contexts->refinement_x_offset_decoder.decode_non_oob(*decoder));
+
+        i32 refinement_y_offset;
+        if (inputs.uses_huffman_encoding)
+            refinement_y_offset = TRY(TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_15))->read_symbol_non_oob(*bit_stream));
+        else
+            refinement_y_offset = TRY(text_contexts->refinement_y_offset_decoder.decode_non_oob(*decoder));
 
         if (symbol_id >= inputs.input_symbols.size() && symbol_id - inputs.input_symbols.size() >= new_symbols.size())
             return Error::from_string_literal("JBIG2ImageDecoderPlugin: Refinement/aggregate symbol ID out of range");
+
+        MQArithmeticDecoder* refinement_decoder = nullptr;
+        Optional<MQArithmeticDecoder> huffman_refinement_decoder;
+        if (inputs.uses_huffman_encoding) {
+            auto data_size = TRY(TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_1))->read_symbol_non_oob(*bit_stream));
+            bit_stream->align_to_byte_boundary();
+            auto huffman_refinement_data = data.slice(stream->offset(), data_size);
+            TRY(stream->discard(data_size));
+            huffman_refinement_decoder = TRY(MQArithmeticDecoder::initialize(huffman_refinement_data));
+            refinement_decoder = &huffman_refinement_decoder.value();
+        } else {
+            refinement_decoder = &decoder.value();
+        }
 
         auto const& IBO = (symbol_id < inputs.input_symbols.size()) ? inputs.input_symbols[symbol_id] : new_symbols[symbol_id - inputs.input_symbols.size()];
         // Table 18 – Parameters used to decode a symbol's bitmap when REFAGGNINST = 1
@@ -1901,7 +1942,7 @@ static ErrorOr<Vector<BilevelSubImage>> symbol_dictionary_decoding_procedure(Sym
         refinement_inputs.reference_y_offset = refinement_y_offset;
         refinement_inputs.is_typical_prediction_used = false;
         refinement_inputs.adaptive_template_pixels = inputs.refinement_adaptive_template_pixels;
-        return generic_refinement_region_decoding_procedure(refinement_inputs, decoder.value(), refinement_contexts.value());
+        return generic_refinement_region_decoding_procedure(refinement_inputs, *refinement_decoder, refinement_contexts.value());
     };
 
     auto read_height_class_collective_bitmap = [&](u32 total_width, u32 height) -> ErrorOr<NonnullRefPtr<BilevelImage>> {
@@ -2747,8 +2788,10 @@ static ErrorOr<RegionResult> decode_text_region(JBIG2LoadingContext& context, Se
     inputs.refinement_adaptive_template_pixels = adaptive_refinement_template;
 
     Optional<MQArithmeticDecoder> decoder;
+    Optional<BigEndianInputBitStream> bit_stream;
     if (uses_huffman_encoding) {
-        inputs.stream = &stream;
+        bit_stream = BigEndianInputBitStream { MaybeOwned { stream } };
+        inputs.bit_stream = &bit_stream.value();
     } else {
         decoder = TRY(MQArithmeticDecoder::initialize(data.slice(TRY(stream.tell()))));
         inputs.arithmetic_decoder = &decoder.value();

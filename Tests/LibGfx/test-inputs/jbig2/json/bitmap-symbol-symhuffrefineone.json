@@ -24,7 +24,7 @@
             "retained": true,
             "data": {
                 "flags": {
-                    "uses_huffman_encoding": false,
+                    "uses_huffman_encoding": true,
                     "uses_refinement_or_aggregate_coding": false,
                     "huffman_table_selection_for_height_differences": 0,
                     "huffman_table_selection_for_width_differences": 0,
@@ -43,32 +43,25 @@
                                 "image_data": {
                                     "from_file": "bitmap.bmp",
                                     "crop": {
-                                        "x": 60,
-                                        "y": 265,
-                                        "width": 15,
-                                        "height": 30
-                                    }
-                                }
-                            },
-                            {
-                                "image_data": {
-                                    "from_file": "bitmap.bmp",
-                                    "crop": {
-                                        "x": 75,
-                                        "y": 265,
-                                        "width": 15,
-                                        "height": 30
-                                    }
-                                }
-                            },
-                            {
-                                "image_data": {
-                                    "from_file": "bitmap.bmp",
-                                    "crop": {
                                         "x": 50,
                                         "y": 108,
                                         "width": 30,
                                         "height": 30
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "symbols": [
+                            {
+                                "image_data": {
+                                    "from_file": "bitmap-blemish.bmp",
+                                    "crop": {
+                                        "x": 60,
+                                        "y": 265,
+                                        "width": 40,
+                                        "height": 75
                                     }
                                 }
                             }
@@ -121,7 +114,7 @@
             ],
             "data": {
                 "flags": {
-                    "uses_huffman_encoding": false,
+                    "uses_huffman_encoding": true,
                     "uses_refinement_or_aggregate_coding": true,
                     "huffman_table_selection_for_height_differences": 0,
                     "huffman_table_selection_for_width_differences": 0,
@@ -137,27 +130,19 @@
                     {
                         "symbols": [
                             {
-                                "width": 30,
-                                "height": 30,
-                                "refines_using_strips": {
-                                    "initial_strip_t": -1,
-                                    "strips": [
-                                        {
-                                            "strip_t": 0,
-                                            "instances": [
-                                                {
-                                                    "instance_s": 0,
-                                                    "instance_t": 0,
-                                                    "symbol_id": 0
-                                                },
-                                                {
-                                                    "instance_s": 15,
-                                                    "instance_t": 0,
-                                                    "symbol_id": 1
-                                                }
-                                            ]
+                                "refines_symbol_to": {
+                                    "symbol_id": 1,
+                                    "delta_x_offset": 0,
+                                    "delta_y_offset": 0,
+                                    "image_data": {
+                                        "from_file": "bitmap.bmp",
+                                        "crop": {
+                                            "x": 60,
+                                            "y": 265,
+                                            "width": 40,
+                                            "height": 75
                                         }
-                                    ]
+                                    }
                                 }
                             }
                         ]
@@ -182,7 +167,7 @@
                     "height": 400
                 },
                 "flags": {
-                    "uses_huffman_encoding": false,
+                    "uses_huffman_encoding": true,
                     "uses_refinement_coding": false,
                     "strip_size": 2,
                     "reference_corner": "top_left",
@@ -211,7 +196,7 @@
                             {
                                 "instance_s": 232,
                                 "instance_t": 70,
-                                "symbol_id": 4
+                                "symbol_id": 3
                             }
                         ]
                     },
@@ -221,7 +206,7 @@
                             {
                                 "instance_s": 135,
                                 "instance_t": 100,
-                                "symbol_id": 3
+                                "symbol_id": 2
                             }
                         ]
                     },
@@ -231,7 +216,7 @@
                             {
                                 "instance_s": 50,
                                 "instance_t": 108,
-                                "symbol_id": 2
+                                "symbol_id": 0
                             }
                         ]
                     },
@@ -241,7 +226,7 @@
                             {
                                 "instance_s": 60,
                                 "instance_t": 265,
-                                "symbol_id": 5
+                                "symbol_id": 4
                             }
                         ]
                     }

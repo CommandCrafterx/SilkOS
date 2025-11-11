@@ -500,7 +500,7 @@ static ErrorOr<NonnullRefPtr<BilevelImage>> symbol_image(JBIG2::SymbolDictionary
     if (symbol.image.has<JBIG2::SymbolDictionarySegmentData::HeightClass::RefinedSymbol>())
         return symbol.image.get<JBIG2::SymbolDictionarySegmentData::HeightClass::RefinedSymbol>().refines_to;
 
-    auto const& text_strips = symbol.image.get<Vector<JBIG2::TextRegionStrip>>();
+    auto const& text_strips = symbol.image.get<JBIG2::SymbolDictionarySegmentData::HeightClass::RefinesUsingStrips>();
     (void)text_strips;
     return Error::from_string_literal("JBIG2Writer: Cannot write refinements of refinements by text strips yet");
 }
@@ -546,7 +546,7 @@ struct TextRegionEncodingInputParameters {
     // FIXME: COLEXTFLAG, SBCOLS
 
     // If uses_huffman_encoding is true, text_region_encoding_procedure() writes data to this stream.
-    Stream* stream { nullptr };
+    BigEndianOutputBitStream* bit_stream { nullptr };
 
     // If uses_huffman_encoding is false, text_region_encoding_procedure() writes data to this encoder.
     MQArithmeticEncoder* arithmetic_encoder { nullptr };
@@ -575,13 +575,12 @@ struct TextContexts {
 // 6.4 Text Region Decoding Procedure, but in reverse.
 static ErrorOr<void> text_region_encoding_procedure(TextRegionEncodingInputParameters const& inputs, Optional<TextContexts>& text_contexts, Optional<RefinementContexts>& refinement_contexts)
 {
-    Optional<BigEndianOutputBitStream> bit_stream;
+    BigEndianOutputBitStream* bit_stream = nullptr;
     MQArithmeticEncoder* encoder = nullptr;
-    if (inputs.uses_huffman_encoding) {
-        bit_stream = BigEndianOutputBitStream { MaybeOwned { *inputs.stream } };
-    } else {
+    if (inputs.uses_huffman_encoding)
+        bit_stream = inputs.bit_stream;
+    else
         encoder = inputs.arithmetic_encoder;
-    }
 
     // "In order to improve compression, symbol instances are grouped into strips according to their TI values. This is done
     //  according to the value of SBSTRIPS. Symbol instances having TI values between 0 and SBSTRIPS – 1 are grouped
@@ -897,8 +896,6 @@ static ErrorOr<void> text_region_encoding_procedure(TextRegionEncodingInputParam
 
     //  "5) After all the strips have been decoded, the current contents of SBREG are the results that shall be
     //      obtained by every decoder, whether it performs this exact sequence of steps or not."
-    if (inputs.uses_huffman_encoding)
-        TRY(bit_stream->align_to_byte_boundary()); // XXX gah! make dtor do this finally
 
     return {};
 }
@@ -999,15 +996,19 @@ static ErrorOr<ByteBuffer> symbol_dictionary_encoding_procedure(SymbolDictionary
     // This belongs in 6.5.5 1) below, but also needs to be captured by write_symbol_bitmap here.
     Vector<JBIG2::SymbolDictionarySegmentData::HeightClass::Symbol> new_symbols;
 
+    // Likewise, this is from 6.5.8.2.3 below.
+    Vector<JBIG2::Code> symbol_id_codes;
+    Optional<JBIG2::HuffmanTable> symbol_id_table_storage;
+
     auto write_symbol_bitmap = [&](JBIG2::SymbolDictionarySegmentData::HeightClass::Symbol const& symbol) -> ErrorOr<void> {
         // 6.5.8 Symbol bitmap
-        if (inputs.uses_huffman_encoding)
-            return Error::from_string_literal("JBIG2Writer: Cannot encode generic symbol bitmaps with huffman encoding yet");
 
         // 6.5.8.1 Direct-coded symbol bitmap
         // "If SDREFAGG is 0, then decode the symbol's bitmap using a generic region decoding procedure as described in 6.2.
         //  Set the parameters to this decoding procedure as shown in Table 16."
         if (!inputs.uses_refinement_or_aggregate_coding) {
+            VERIFY(!inputs.uses_huffman_encoding);
+
             if (!symbol.image.has<NonnullRefPtr<BilevelImage>>())
                 return Error::from_string_literal("JBIG2Writer: Symbol region not using refinement or aggregation coding must only use simple images");
 
@@ -1028,9 +1029,9 @@ static ErrorOr<ByteBuffer> symbol_dictionary_encoding_procedure(SymbolDictionary
         // 6.5.8.2 Refinement/aggregate-coded symbol bitmap
         // "1) Decode the number of symbol instances contained in the aggregation, as specified in 6.5.8.2.1. Let REFAGGNINST be the value decoded."
         i32 number_of_symbol_instances = 1;
-        if (symbol.image.has<Vector<JBIG2::TextRegionStrip>>()) {
+        if (symbol.image.has<JBIG2::SymbolDictionarySegmentData::HeightClass::RefinesUsingStrips>()) {
             number_of_symbol_instances = 0;
-            auto const& strips = symbol.image.get<Vector<JBIG2::TextRegionStrip>>();
+            auto const& strips = symbol.image.get<JBIG2::SymbolDictionarySegmentData::HeightClass::RefinesUsingStrips>().strips;
             for (auto const& strip : strips)
                 number_of_symbol_instances += strip.symbol_instances.size();
 
@@ -1040,8 +1041,16 @@ static ErrorOr<ByteBuffer> symbol_dictionary_encoding_procedure(SymbolDictionary
         TRY(write_number_of_symbol_instances(number_of_symbol_instances));
 
         // 6.5.8.2.3 Setting SBSYMCODES and SBSYMCODELEN
-        // FIXME: Implement support for SDHUFF = 1
-        u32 code_length = ceil(log2(inputs.input_symbols.size() + inputs.number_of_new_symbols));
+        u32 number_of_symbols = inputs.input_symbols.size() + inputs.number_of_new_symbols; // "SBNUMSYMS" in spec.
+        u32 code_length = ceil(log2(number_of_symbols));                                    // "SBSYMCODELEN" in spec.
+        JBIG2::HuffmanTable const* symbol_id_table { nullptr };
+        if (inputs.uses_huffman_encoding) {
+            if (!symbol_id_table_storage.has_value()) {
+                symbol_id_codes = TRY(JBIG2::uniform_huffman_codes(number_of_symbols, max(code_length, 1u)));
+                symbol_id_table_storage = JBIG2::HuffmanTable { symbol_id_codes };
+            }
+            symbol_id_table = &symbol_id_table_storage.value();
+        }
 
         if (!text_contexts.has_value())
             text_contexts = TextContexts { code_length };
@@ -1049,16 +1058,18 @@ static ErrorOr<ByteBuffer> symbol_dictionary_encoding_procedure(SymbolDictionary
             refinement_contexts = RefinementContexts(inputs.refinement_template);
 
         if (number_of_symbol_instances > 1) {
-            auto const& strips = symbol.image.get<Vector<JBIG2::TextRegionStrip>>();
+            auto const& refines_using_strips = symbol.image.get<JBIG2::SymbolDictionarySegmentData::HeightClass::RefinesUsingStrips>();
 
             // "2) If REFAGGNINST is greater than one, then decode the bitmap itself using a text region decoding procedure
             //     as described in 6.4. Set the parameters to this decoding procedure as shown in Table 17."
 
             // Table 17 – Parameters used to decode a symbol's bitmap using refinement/aggregate decoding
-            TextRegionEncodingInputParameters text_inputs { .symbol_instance_strips = strips };
+            TextRegionEncodingInputParameters text_inputs { .symbol_instance_strips = refines_using_strips.strips };
             text_inputs.uses_huffman_encoding = inputs.uses_huffman_encoding;
             text_inputs.uses_refinement_coding = true;
             text_inputs.size_of_symbol_instance_strips = 1;
+            text_inputs.initial_strip_t = refines_using_strips.initial_strip_t;
+            text_inputs.symbol_id_table = symbol_id_table;
             text_inputs.id_symbol_code_length = code_length;
 
             // 6.5.8.2.4 Setting SBSYMS
@@ -1081,24 +1092,46 @@ static ErrorOr<ByteBuffer> symbol_dictionary_encoding_procedure(SymbolDictionary
             text_inputs.refinement_template = inputs.refinement_template;
             text_inputs.refinement_adaptive_template_pixels = inputs.refinement_adaptive_template_pixels;
 
-            text_inputs.arithmetic_encoder = &encoder.value();
+            if (inputs.uses_huffman_encoding)
+                text_inputs.bit_stream = &bit_stream.value();
+            else
+                text_inputs.arithmetic_encoder = &encoder.value();
             return text_region_encoding_procedure(text_inputs, text_contexts, refinement_contexts);
         }
 
         // "3) If REFAGGNINST is equal to one, then decode the bitmap as described in 6.5.8.2.2."
 
         // 6.5.8.2.2 Decoding a bitmap when REFAGGNINST = 1
-        // FIXME: This is missing some steps for the SDHUFF = 1 case.
 
         auto const& refinement_image = symbol.image.get<JBIG2::SymbolDictionarySegmentData::HeightClass::RefinedSymbol>();
-        TRY(text_contexts->id_encoder.encode(*encoder, refinement_image.symbol_id));
-        TRY(text_contexts->refinement_x_offset_encoder.encode_non_oob(*encoder, refinement_image.delta_x_offset));
-        TRY(text_contexts->refinement_y_offset_encoder.encode_non_oob(*encoder, refinement_image.delta_y_offset));
+        if (inputs.uses_huffman_encoding)
+            TRY(symbol_id_table->write_symbol_non_oob(*bit_stream, refinement_image.symbol_id));
+        else
+            TRY(text_contexts->id_encoder.encode(*encoder, refinement_image.symbol_id));
+
+        if (inputs.uses_huffman_encoding)
+            TRY(TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_15))->write_symbol_non_oob(*bit_stream, refinement_image.delta_x_offset));
+        else
+            TRY(text_contexts->refinement_x_offset_encoder.encode_non_oob(*encoder, refinement_image.delta_x_offset));
+
+        if (inputs.uses_huffman_encoding)
+            TRY(TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_15))->write_symbol_non_oob(*bit_stream, refinement_image.delta_y_offset));
+        else
+            TRY(text_contexts->refinement_y_offset_encoder.encode_non_oob(*encoder, refinement_image.delta_y_offset));
 
         if (refinement_image.symbol_id >= inputs.input_symbols.size() && refinement_image.symbol_id - inputs.input_symbols.size() >= new_symbols.size())
             return Error::from_string_literal("JBIG2Writer: Refinement/aggregate symbol ID out of range");
 
         auto const& IBO = TRY(symbol_image(refinement_image.symbol_id < inputs.input_symbols.size() ? inputs.input_symbols[refinement_image.symbol_id] : new_symbols[refinement_image.symbol_id - inputs.input_symbols.size()]));
+
+        MQArithmeticEncoder* refinement_encoder = nullptr;
+        Optional<MQArithmeticEncoder> huffman_refinement_encoder;
+        if (inputs.uses_huffman_encoding) {
+            huffman_refinement_encoder = TRY(MQArithmeticEncoder::initialize(0));
+            refinement_encoder = &huffman_refinement_encoder.value();
+        } else {
+            refinement_encoder = &encoder.value();
+        }
 
         // Table 18 – Parameters used to decode a symbol's bitmap when REFAGGNINST = 1
         GenericRefinementRegionEncodingInputParameters refinement_inputs {
@@ -1110,7 +1143,16 @@ static ErrorOr<ByteBuffer> symbol_dictionary_encoding_procedure(SymbolDictionary
         refinement_inputs.reference_y_offset = refinement_image.delta_y_offset;
         refinement_inputs.is_typical_prediction_used = false;
         refinement_inputs.adaptive_template_pixels = inputs.refinement_adaptive_template_pixels;
-        return generic_refinement_region_encoding_procedure(refinement_inputs, encoder.value(), refinement_contexts.value());
+        TRY(generic_refinement_region_encoding_procedure(refinement_inputs, *refinement_encoder, refinement_contexts.value()));
+
+        if (inputs.uses_huffman_encoding) {
+            auto data = TRY(huffman_refinement_encoder->finalize(refinement_image.trailing_7fff_handling));
+            TRY(TRY(JBIG2::HuffmanTable::standard_huffman_table(JBIG2::HuffmanTable::StandardTable::B_1))->write_symbol_non_oob(*bit_stream, data.size()));
+            TRY(bit_stream->align_to_byte_boundary());
+            TRY(stream->write_until_depleted(data));
+        }
+
+        return {};
     };
 
     auto write_height_class_collective_bitmap = [&](BilevelImage const& image, bool compress) -> ErrorOr<void> {
@@ -1783,19 +1825,10 @@ static ErrorOr<void> encode_text_region(JBIG2::TextRegionSegmentData const& text
         for (auto code_length_length : code_length_lengths)
             TRY(symbol_id_bit_stream.write_bits(code_length_length, 4));
 
-        Vector<u8> code_lengths;
-        for (u32 i = 0; i < symbols.size(); ++i) {
+        for (u32 i = 0; i < symbols.size(); ++i)
             TRY(symbol_id_bit_stream.write_bits(0u, 1));
-            code_lengths.append(max(id_symbol_code_length, 1));
-        }
 
-        auto codes = TRY(JBIG2::assign_huffman_codes(code_lengths));
-        for (auto const& [i, length] : enumerate(code_lengths)) {
-            if (length == 0)
-                continue;
-            JBIG2::Code code { .prefix_length = length, .range_length = 0, .first_value = i, .code = codes[i] };
-            symbol_id_codes.append(code);
-        }
+        symbol_id_codes = TRY(JBIG2::uniform_huffman_codes(symbols.size(), max(id_symbol_code_length, 1)));
         symbol_id_table_storage = JBIG2::HuffmanTable { symbol_id_codes };
         symbol_id_table = &symbol_id_table_storage.value();
 
@@ -1842,8 +1875,10 @@ static ErrorOr<void> encode_text_region(JBIG2::TextRegionSegmentData const& text
 
     AllocatingMemoryStream output_stream;
     Optional<MQArithmeticEncoder> encoder;
+    Optional<BigEndianOutputBitStream> bit_stream;
     if (uses_huffman_encoding) {
-        inputs.stream = &output_stream;
+        bit_stream = BigEndianOutputBitStream { MaybeOwned { output_stream } };
+        inputs.bit_stream = &bit_stream.value();
     } else {
         encoder = TRY(MQArithmeticEncoder::initialize(0));
         inputs.arithmetic_encoder = &encoder.value();
@@ -1851,10 +1886,12 @@ static ErrorOr<void> encode_text_region(JBIG2::TextRegionSegmentData const& text
 
     TRY(text_region_encoding_procedure(inputs, text_contexts, refinement_contexts));
     ByteBuffer data;
-    if (uses_huffman_encoding)
+    if (uses_huffman_encoding) {
+        TRY(bit_stream->align_to_byte_boundary());
         data = TRY(output_stream.read_until_eof());
-    else
+    } else {
         data = TRY(encoder->finalize(text_region.trailing_7fff_handling));
+    }
 
     u8 number_of_refinement_adaptive_template_pixels = (uses_refinement_coding && refinement_template == 0) ? 2 : 0;
     TRY(scratch_buffer.try_resize(sizeof(JBIG2::RegionSegmentInformationField) + 2 + (uses_huffman_encoding ? 2 : 0) + number_of_refinement_adaptive_template_pixels * 2 + 4 + symbol_id_huffman_decoding_table.size() + data.size()));
