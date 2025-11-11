@@ -1,0 +1,56 @@
+name: SilkOS CI Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          e2fsprogs \
+          ninja-build \
+          qemu-system-x86 \
+          rsync \
+          texinfo \
+          curl \
+          libmpfr-dev \
+          libmpc-dev \
+          libgmp-dev \
+          unzip
+          
+    - name: Cache Toolchain and Artifacts
+      uses: actions/cache@v4
+      with:
+        key: ${{ runner.os }}-silk-cache-${{ hashFiles('Meta/serenity.sh') }}-${{ hashFiles('Toolchain/Build*') }}
+        path: |
+          Build/
+          Toolchain/
+          Userland/
+          Kernel/
+        restore-keys: |
+          ${{ runner.os }}-silk-cache-
+
+    - name: 🛠️ Toolchain build
+      run: Meta/serenity.sh rebuild-toolchain
+
+    - name: 🔨 SilkOS build
+      run: Meta/serenity.sh build
+
+    - name: Tests
+      run: Meta/run_tests.sh --sanity-check
