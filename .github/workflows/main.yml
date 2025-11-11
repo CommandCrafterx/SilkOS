@@ -37,7 +37,7 @@ jobs:
     - name: Cache Toolchain and Artifacts
       uses: actions/cache@v4
       with:
-        key: ${{ runner.os }}-silk-cache-${{ hashFiles('Meta/serenity.sh') }}-${{ hashFiles('Toolchain/Build*') }}
+        key: ${{ runner.os }}-silk-cache-${{ hashFiles('Meta/silkos.sh') }}-${{ hashFiles('Toolchain/Build*') }}
         path: |
           Build/
           Toolchain/
@@ -47,10 +47,10 @@ jobs:
           ${{ runner.os }}-silk-cache-
 
     - name: Toolchain build
-      run: Meta/serenity.sh rebuild-toolchain
+      run: Meta/silkos.sh rebuild-toolchain
 
     - name: SilkOS build
-      run: Meta/serenity.sh build
+      run: Meta/silkos.sh build
 
     - name: Tests
       run: Meta/run_tests.sh --sanity-check
