@@ -46,10 +46,10 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-silk-cache-
 
-    - name: 🛠️ Toolchain build
+    - name: Toolchain build
       run: Meta/serenity.sh rebuild-toolchain
 
-    - name: 🔨 SilkOS build
+    - name: SilkOS build
       run: Meta/serenity.sh build
 
     - name: Tests
