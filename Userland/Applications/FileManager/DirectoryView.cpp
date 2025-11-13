@@ -37,8 +37,8 @@ void spawn_terminal(GUI::Window* window, StringView directory)
 NonnullRefPtr<GUI::Action> LauncherHandler::create_launch_action(Function<void(LauncherHandler const&)> launch_handler)
 {
     auto icon = GUI::FileIconProvider::icon_for_executable(details().executable).bitmap_for_size(16);
-    return GUI::Action::create(details().name, move(icon), [this, launch_handler = move(launch_handler)](auto&) {
-        launch_handler(*this);
+    return GUI::Action::create(details().name, move(icon), [strong_this = NonnullRefPtr(*this), launch_handler = move(launch_handler)](auto&) {
+        launch_handler(*strong_this);
     });
 }
 
@@ -672,10 +672,7 @@ void DirectoryView::handle_drop(GUI::ModelIndex const& index, GUI::DropEvent con
 {
     auto const& target_node = node(index);
 
-    bool const has_accepted_drop = ::FileManager::handle_drop(event, target_node.full_path(), window()).release_value_but_fixme_should_propagate_errors();
-
-    if (has_accepted_drop && on_accepted_drop)
-        on_accepted_drop();
+    ::FileManager::handle_drop(event, target_node.full_path(), window()).release_value_but_fixme_should_propagate_errors();
 }
 
 }

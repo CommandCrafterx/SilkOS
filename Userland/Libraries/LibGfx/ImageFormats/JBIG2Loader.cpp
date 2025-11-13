@@ -279,15 +279,21 @@ static ErrorOr<JBIG2::SegmentHeader> decode_segment_header(SeekableStream& strea
         TRY(stream.seek(-1, SeekMode::FromCurrentPosition));
         count_of_referred_to_segments = TRY(stream.read_value<BigEndian<u32>>()) & 0x1FFF'FFFF;
 
+        auto retention_flags_offset = TRY(stream.tell());
+
         LittleEndianInputBitStream bit_stream { MaybeOwned { stream } };
         u32 bit_count = ceil_div(count_of_referred_to_segments + 1, 8) * 8;
         retention_flag = TRY(bit_stream.read_bit());
-        for (u32 i = 0; i < count_of_referred_to_segments; ++i)
+        for (u32 i = 1; i < count_of_referred_to_segments + 1; ++i)
             referred_to_segment_retention_flags.append(TRY(bit_stream.read_bit()));
-        for (u32 i = count_of_referred_to_segments; i < bit_count; ++i) {
+        for (u32 i = count_of_referred_to_segments + 1; i < bit_count; ++i) {
             if (TRY(bit_stream.read_bit()))
                 return Error::from_string_literal("JBIG2ImageDecoderPlugin: Invalid referred-to segment retention flag");
         }
+
+        // LittleEndianInputBitStream peeks ahead, which means it over-reads the underlying stream.
+        // Seek back to past the retention flag bits.
+        TRY(stream.seek(retention_flags_offset + bit_count / 8, SeekMode::SetPosition));
     } else {
         retention_flag = referred_to_segment_count_and_retention_flags & 1;
         for (u32 i = 1; i < count_of_referred_to_segments + 1; ++i)
@@ -640,7 +646,7 @@ static ErrorOr<void> validate_segment_header_page_associations(JBIG2LoadingConte
         if (is_region_segment(segment.type())
             || first_is_one_of(segment.type(), JBIG2::SegmentType::PageInformation, JBIG2::SegmentType::EndOfPage, JBIG2::SegmentType::EndOfStripe)) {
             if (segment.header.page_association == 0)
-                return Error::from_string_literal("JBIG2ImageDecoderPlugin: Region, page information, end of page or end of stripe segment with no page association");
+                return Error::from_string_literal("JBIG2ImageDecoderPlugin: Region, page information, end of page, or end of stripe segment with no page association");
         }
         // Quirk: `042_*.jb2`, `amb_*.jb2` in the Power JBIG2 test suite incorrectly (cf 7.3.2) associate EndOfFile with a page.
         if (segment.type() == JBIG2::SegmentType::EndOfFile && segment.header.page_association != 0 && !context.is_power_jbig2_file)
