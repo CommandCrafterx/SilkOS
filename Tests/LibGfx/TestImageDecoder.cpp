@@ -386,6 +386,11 @@ TEST_CASE(test_jbig2_decode)
         TEST_INPUT("jbig2/bitmap-symbol-textrefine-negative-delta-width.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-symbol-texthuffrefine.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-symbol-texthuffrefineB15.jbig2"sv),
+        TEST_INPUT("jbig2/bitmap-symbol-texthuffrefinecustom.jbig2"sv),
+        TEST_INPUT("jbig2/bitmap-symbol-texthuffrefinecustomdims.jbig2"sv),
+        TEST_INPUT("jbig2/bitmap-symbol-texthuffrefinecustompos.jbig2"sv),
+        TEST_INPUT("jbig2/bitmap-symbol-texthuffrefinecustomposdims.jbig2"sv),
+        TEST_INPUT("jbig2/bitmap-symbol-texthuffrefinecustomsize.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-symbol-symbolrefineone.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-symbol-symbolrefineone-customat.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-symbol-symbolrefineone-template1.jbig2"sv),
@@ -408,12 +413,11 @@ TEST_CASE(test_jbig2_decode)
         // - intermediate text regions (code support added in #26197)
         // - intermediate halftone regions (code support added in #26197)
         // - intermediate direct regions (code support added in #26197)
+        // - symbol refinement referring to symbol in same segment
         // Missing tests for things that aren't implemented yet:
         // - immediate refinement regions not referring to a direct region (i.e. refining the page)
-        // - huffman-coded symbols with SDREFAGG = 1, REFAGGNINST = 1 case
         // - exttemplate
         // - colors
-        // (test_annex_h_jbig2 covers a subset of these, but having standalone files would be nice.)
     };
 
     for (auto test_input : test_inputs) {
