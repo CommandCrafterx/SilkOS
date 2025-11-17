@@ -9,7 +9,6 @@
 #include <AK/Hex.h>
 #include <AK/MemMem.h>
 #include <AK/Optional.h>
-#include <AK/String.h>
 #include <AK/StringBuilder.h>
 #include <AK/StringUtils.h>
 #include <AK/StringView.h>
@@ -22,6 +21,7 @@
 #else
 #    include <AK/ByteString.h>
 #    include <AK/FloatingPointStringConversions.h>
+#    include <AK/String.h>
 #    include <string.h>
 #endif
 
@@ -29,6 +29,7 @@ namespace AK {
 
 namespace StringUtils {
 
+#ifndef KERNEL
 bool matches(StringView str, StringView mask, CaseSensitivity case_sensitivity, Vector<MaskSpan>* match_spans)
 {
     auto record_span = [&match_spans](size_t start, size_t length) {
@@ -93,6 +94,7 @@ bool matches(StringView str, StringView mask, CaseSensitivity case_sensitivity, 
 
     return string_ptr == string_end && mask_ptr == mask_end;
 }
+#endif
 
 template<typename T>
 Optional<T> convert_to_int(StringView str, TrimWhitespace trim_whitespace)
@@ -431,6 +433,7 @@ Optional<size_t> find_last_not(StringView haystack, char needle)
     return {};
 }
 
+#ifndef KERNEL
 Vector<size_t> find_all(StringView haystack, StringView needle)
 {
     Vector<size_t> positions;
@@ -446,6 +449,7 @@ Vector<size_t> find_all(StringView haystack, StringView needle)
     }
     return positions;
 }
+#endif
 
 Optional<size_t> find_any_of(StringView haystack, StringView needles, SearchDirection direction)
 {
