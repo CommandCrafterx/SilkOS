@@ -12,6 +12,7 @@
 
 namespace Gfx {
 
+class BilevelImage;
 struct JBIG2LoadingContext;
 struct MQArithmeticCoderContext;
 class MQArithmeticDecoder;
@@ -69,10 +70,13 @@ public:
     virtual size_t frame_count() override;
     virtual ErrorOr<ImageFrameDescriptor> frame(size_t index, Optional<IntSize> ideal_size = {}) override;
 
-    static ErrorOr<ByteBuffer> decode_embedded(Vector<ReadonlyBytes>);
+    static ErrorOr<NonnullRefPtr<BilevelImage>> decode_embedded(Vector<ReadonlyBytes>);
+    static ErrorOr<NonnullRefPtr<BilevelImage>> decode_embedded_intermediate_region_segment(Vector<ReadonlyBytes>, u32 segment_number);
 
 private:
     JBIG2ImageDecoderPlugin(JBIG2DecoderOptions);
+
+    static ErrorOr<NonnullOwnPtr<JBIG2ImageDecoderPlugin>> create_embedded_jbig2_decoder(Vector<ReadonlyBytes> data);
 
     OwnPtr<JBIG2LoadingContext> m_context;
 };

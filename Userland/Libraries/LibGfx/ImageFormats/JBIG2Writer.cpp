@@ -21,6 +21,7 @@
 #include <LibGfx/Bitmap.h>
 #include <LibGfx/ImageFormats/BilevelImage.h>
 #include <LibGfx/ImageFormats/CCITTEncoder.h>
+#include <LibGfx/ImageFormats/JBIG2Loader.h>
 #include <LibGfx/ImageFormats/JBIG2Writer.h>
 #include <LibGfx/ImageFormats/MQArithmeticCoder.h>
 #include <LibTextCodec/Encoder.h>
@@ -337,7 +338,7 @@ namespace {
 struct GenericRefinementRegionEncodingInputParameters {
     BilevelImage const& image;                                          // Of dimensions "GRW" x "GRH" in spec terms.
     u8 gr_template { 0 };                                               // "GRTEMPLATE" in spec.
-    BilevelImage const* reference_bitmap { nullptr };                   // "GRREFERENCE" in spec.
+    BilevelSubImage reference_bitmap;                                   // "GRREFERENCE" in spec.
     i32 reference_x_offset { 0 };                                       // "GRREFERENCEDX" in spec.
     i32 reference_y_offset { 0 };                                       // "GRREFERENCEDY" in spec.
     bool is_typical_prediction_used { false };                          // "TPGRON" in spec.
@@ -378,7 +379,7 @@ static ErrorOr<void> generic_refinement_region_encoding_procedure(GenericRefinem
     };
 
     // Figure 12 – 13-pixel refinement template showing the AT pixels at their nominal locations
-    constexpr auto compute_context_0 = [](ReadonlySpan<JBIG2::AdaptiveTemplatePixel> adaptive_pixels, BilevelImage const& reference, int reference_x, int reference_y, BilevelImage const& buffer, int x, int y) -> u16 {
+    constexpr auto compute_context_0 = [](ReadonlySpan<JBIG2::AdaptiveTemplatePixel> adaptive_pixels, BilevelSubImage const& reference, int reference_x, int reference_y, BilevelImage const& buffer, int x, int y) -> u16 {
         u16 result = 0;
 
         for (int dy = -1; dy <= 1; ++dy) {
@@ -399,7 +400,7 @@ static ErrorOr<void> generic_refinement_region_encoding_procedure(GenericRefinem
     };
 
     // Figure 13 – 10-pixel refinement template
-    constexpr auto compute_context_1 = [](ReadonlySpan<JBIG2::AdaptiveTemplatePixel>, BilevelImage const& reference, int reference_x, int reference_y, BilevelImage const& buffer, int x, int y) -> u16 {
+    constexpr auto compute_context_1 = [](ReadonlySpan<JBIG2::AdaptiveTemplatePixel>, BilevelSubImage const& reference, int reference_x, int reference_y, BilevelImage const& buffer, int x, int y) -> u16 {
         u16 result = 0;
 
         for (int dy = -1; dy <= 1; ++dy) {
@@ -440,10 +441,10 @@ static ErrorOr<void> generic_refinement_region_encoding_procedure(GenericRefinem
         auto predict = [&](size_t x, size_t y) -> Optional<bool> {
             // "• a 3 × 3 pixel array in the reference bitmap (Figure 16), centred at the location
             //    corresponding to the current pixel, contains pixels all of the same value."
-            bool prediction = get_pixel(*inputs.reference_bitmap, x - inputs.reference_x_offset - 1, y - inputs.reference_y_offset - 1);
+            bool prediction = get_pixel(inputs.reference_bitmap, x - inputs.reference_x_offset - 1, y - inputs.reference_y_offset - 1);
             for (int dy = -1; dy <= 1; ++dy)
                 for (int dx = -1; dx <= 1; ++dx)
-                    if (get_pixel(*inputs.reference_bitmap, x - inputs.reference_x_offset + dx, y - inputs.reference_y_offset + dy) != prediction)
+                    if (get_pixel(inputs.reference_bitmap, x - inputs.reference_x_offset + dx, y - inputs.reference_y_offset + dy) != prediction)
                         return {};
             return prediction;
         };
@@ -471,7 +472,7 @@ static ErrorOr<void> generic_refinement_region_encoding_procedure(GenericRefinem
             // "c) If LTP = 0 then, from left to right, explicitly decode all pixels of the current row of GRREG. The
             //     procedure for each pixel is as follows:"
             for (size_t x = 0; x < width; ++x) {
-                u16 context = compute_context(inputs.adaptive_template_pixels, *inputs.reference_bitmap, x - inputs.reference_x_offset, y - inputs.reference_y_offset, inputs.image, x, y);
+                u16 context = compute_context(inputs.adaptive_template_pixels, inputs.reference_bitmap, x - inputs.reference_x_offset, y - inputs.reference_y_offset, inputs.image, x, y);
                 encoder.encode_bit(inputs.image.get_bit(x, y), contexts.contexts[context]);
             }
         } else {
@@ -484,7 +485,7 @@ static ErrorOr<void> generic_refinement_region_encoding_procedure(GenericRefinem
                 // TPGRON must be 1 if LTP is set. (The spec has an explicit "TPGRON is 1 AND" check here, but it is pointless.)
                 VERIFY(inputs.is_typical_prediction_used);
                 if (!prediction.has_value()) {
-                    u16 context = compute_context(inputs.adaptive_template_pixels, *inputs.reference_bitmap, x - inputs.reference_x_offset, y - inputs.reference_y_offset, inputs.image, x, y);
+                    u16 context = compute_context(inputs.adaptive_template_pixels, inputs.reference_bitmap, x - inputs.reference_x_offset, y - inputs.reference_y_offset, inputs.image, x, y);
                     encoder.encode_bit(inputs.image.get_bit(x, y), contexts.contexts[context]);
                 }
             }
@@ -726,7 +727,7 @@ static ErrorOr<void> text_region_encoding_procedure(TextRegionEncodingInputParam
         auto reference_bitmap = TRY(symbol_image(symbol));
         GenericRefinementRegionEncodingInputParameters refinement_inputs {
             .image = symbol_instance.refinement_data->refines_to,
-            .reference_bitmap = reference_bitmap,
+            .reference_bitmap = reference_bitmap->as_subbitmap(),
         };
 
         // FIXME: Instead, just compute the delta here instead of having it be passed in?
@@ -1136,7 +1137,7 @@ static ErrorOr<ByteBuffer> symbol_dictionary_encoding_procedure(SymbolDictionary
         // Table 18 – Parameters used to decode a symbol's bitmap when REFAGGNINST = 1
         GenericRefinementRegionEncodingInputParameters refinement_inputs {
             .image = *refinement_image.refines_to,
-            .reference_bitmap = IBO,
+            .reference_bitmap = IBO->as_subbitmap(),
         };
         refinement_inputs.gr_template = inputs.refinement_template;
         refinement_inputs.reference_x_offset = refinement_image.delta_x_offset;
@@ -1543,6 +1544,13 @@ struct SerializedSegmentData {
 };
 
 struct JBIG2EncodingContext {
+    JBIG2EncodingContext(Vector<JBIG2::SegmentData> const& segments)
+        : segments(segments)
+    {
+    }
+
+    Vector<JBIG2::SegmentData> const& segments;
+
     HashMap<u32, JBIG2::SegmentData const*> segment_by_id;
 
     HashMap<u32, SerializedSegmentData> segment_data_by_id;
@@ -2266,24 +2274,70 @@ static ErrorOr<void> encode_generic_refinement_region(JBIG2::GenericRefinementRe
     // 7.4.7 Generic refinement region syntax
     if (header.referred_to_segments.size() > 1)
         return Error::from_string_literal("JBIG2Writer: Generic refinement region must refer to at most one segment");
-    if (header.referred_to_segments.size() == 0)
-        return Error::from_string_literal("JBIG2Writer: Generic refinement region refining page not yet implemented");
 
-    auto maybe_segment = context.segment_by_id.get(header.referred_to_segments[0].segment_number);
-    if (!maybe_segment.has_value())
-        return Error::from_string_literal("JBIG2Writer: Could not find referred-to segment for generic refinement region");
-    auto const& referred_to_segment = *maybe_segment.value();
+    enum class CollectionBehavior {
+        ExcludeSelf,
+        IncludeSelf,
+    };
+    auto collect_related_segments = [&context](u32 page, u32 segment_number, CollectionBehavior behavior) {
+        Vector<ReadonlyBytes> preceding_segments_on_same_page;
+        bool found = false;
+        for (auto const& segment : context.segments) {
+            if (segment.header.page_association == 0 || segment.header.page_association == page) {
+                auto const& data = context.segment_data_by_id.get(segment.header.segment_number);
+                if (segment.header.segment_number == segment_number) {
+                    if (behavior == CollectionBehavior::IncludeSelf)
+                        preceding_segments_on_same_page.append(data->data);
+                    found = true;
+                    break;
+                }
+                preceding_segments_on_same_page.append(data->data);
+            }
+        }
+        VERIFY(found);
+        return preceding_segments_on_same_page;
+    };
 
-    auto const* reference_bitmap = TRY(referred_to_segment.data.visit(
-        [](JBIG2::IntermediateGenericRegionSegmentData const& generic_region_wrapper) -> ErrorOr<BilevelImage const*> {
-            return generic_region_wrapper.generic_region.image;
-        },
-        [](JBIG2::IntermediateGenericRefinementRegionSegmentData const& generic_refinement_region_wrapper) -> ErrorOr<BilevelImage const*> {
-            return generic_refinement_region_wrapper.generic_refinement_region.image;
-        },
-        [](auto const&) -> ErrorOr<BilevelImage const*> {
-            return Error::from_string_literal("JBIG2Writer: Generic refinement region can only refer to intermediate region segments");
-        }));
+    // 7.4.7.4 Reference bitmap selection
+    auto const reference_bitmap = TRY([&]() -> ErrorOr<BilevelSubImage> {
+        // "If this segment refers to another region segment, then set the reference bitmap GRREFERENCE to be the current
+        //  contents of the auxiliary buffer associated with the region segment that this segment refers to."
+        if (header.referred_to_segments.size() == 1) {
+            auto maybe_segment = context.segment_by_id.get(header.referred_to_segments[0].segment_number);
+            if (!maybe_segment.has_value())
+                return Error::from_string_literal("JBIG2Writer: Could not find referred-to segment for generic refinement region");
+            auto const& referred_to_segment = *maybe_segment.value();
+
+            return TRY(referred_to_segment.data.visit(
+                           [&]<OneOf<JBIG2::IntermediateTextRegionSegmentData, JBIG2::IntermediateHalftoneRegionSegmentData> T>(T const&) -> ErrorOr<NonnullRefPtr<BilevelImage>> {
+                               auto related_segments_on_same_page = collect_related_segments(referred_to_segment.header.page_association, referred_to_segment.header.segment_number, CollectionBehavior::IncludeSelf);
+                               auto bitmap = TRY(JBIG2ImageDecoderPlugin::decode_embedded_intermediate_region_segment(related_segments_on_same_page, referred_to_segment.header.segment_number));
+                               return bitmap;
+                           },
+
+                           // Optimization: IntermediateGenericRegionSegmentData, IntermediateGenericRefinementRegionSegmentData could also use
+                           // the implementation above, but since we happen to have the final bitmap at hand for them, just return it immediately.
+                           [](JBIG2::IntermediateGenericRegionSegmentData const& generic_region_wrapper) -> ErrorOr<NonnullRefPtr<BilevelImage>> {
+                               return generic_region_wrapper.generic_region.image;
+                           },
+                           [](JBIG2::IntermediateGenericRefinementRegionSegmentData const& generic_refinement_region_wrapper) -> ErrorOr<NonnullRefPtr<BilevelImage>> {
+                               return generic_refinement_region_wrapper.generic_refinement_region.image;
+                           },
+
+                           [](auto const&) -> ErrorOr<NonnullRefPtr<BilevelImage>> {
+                               return Error::from_string_literal("JBIG2Writer: Generic refinement region can only refer to intermediate region segments");
+                           }))
+                ->as_subbitmap();
+        }
+
+        // "If this segment does not refer to another region segment, set GRREFERENCE to be a bitmap containing the current
+        //  contents of the page buffer (see clause 8), restricted to the area of the page buffer specified by this segment's region
+        //  segment information field."
+        VERIFY(header.referred_to_segments.size() == 0);
+        auto preceding_segments_on_same_page = collect_related_segments(header.page_association, header.segment_number, CollectionBehavior::ExcludeSelf);
+        auto bitmap = TRY(JBIG2ImageDecoderPlugin::decode_embedded(preceding_segments_on_same_page));
+        return bitmap->subbitmap(generic_refinement_region.region_segment_information.rect());
+    }());
 
     GenericRefinementRegionEncodingInputParameters inputs {
         .image = *generic_refinement_region.image,
@@ -2511,6 +2565,10 @@ static ErrorOr<SerializedSegmentData> encode_segment(JBIG2::SegmentData const& s
             TRY(encode_text_region(text_region_wrapper.text_region, segment_data.header, context, scratch_buffer));
             return scratch_buffer;
         },
+        [&scratch_buffer, &segment_data, &context](JBIG2::IntermediateTextRegionSegmentData const& text_region_wrapper) -> ErrorOr<ReadonlyBytes> {
+            TRY(encode_text_region(text_region_wrapper.text_region, segment_data.header, context, scratch_buffer));
+            return scratch_buffer;
+        },
         [&scratch_buffer](JBIG2::PatternDictionarySegmentData const& pattern_dictionary) -> ErrorOr<ReadonlyBytes> {
             TRY(encode_pattern_dictionary(pattern_dictionary, scratch_buffer));
             return scratch_buffer;
@@ -2520,6 +2578,10 @@ static ErrorOr<SerializedSegmentData> encode_segment(JBIG2::SegmentData const& s
             return scratch_buffer;
         },
         [&scratch_buffer, &segment_data, &context](JBIG2::ImmediateLosslessHalftoneRegionSegmentData const& halftone_region_wrapper) -> ErrorOr<ReadonlyBytes> {
+            TRY(encode_halftone_region(halftone_region_wrapper.halftone_region, segment_data.header, context, scratch_buffer));
+            return scratch_buffer;
+        },
+        [&scratch_buffer, &segment_data, &context](JBIG2::IntermediateHalftoneRegionSegmentData const& halftone_region_wrapper) -> ErrorOr<ReadonlyBytes> {
             TRY(encode_halftone_region(halftone_region_wrapper.halftone_region, segment_data.header, context, scratch_buffer));
             return scratch_buffer;
         },
@@ -2580,9 +2642,11 @@ static ErrorOr<SerializedSegmentData> encode_segment(JBIG2::SegmentData const& s
         [](JBIG2::SymbolDictionarySegmentData const&) { return JBIG2::SegmentType::SymbolDictionary; },
         [](JBIG2::ImmediateTextRegionSegmentData const&) { return JBIG2::SegmentType::ImmediateTextRegion; },
         [](JBIG2::ImmediateLosslessTextRegionSegmentData const&) { return JBIG2::SegmentType::ImmediateLosslessTextRegion; },
+        [](JBIG2::IntermediateTextRegionSegmentData const&) { return JBIG2::SegmentType::IntermediateTextRegion; },
         [](JBIG2::PatternDictionarySegmentData const&) { return JBIG2::SegmentType::PatternDictionary; },
         [](JBIG2::ImmediateHalftoneRegionSegmentData const&) { return JBIG2::SegmentType::ImmediateHalftoneRegion; },
         [](JBIG2::ImmediateLosslessHalftoneRegionSegmentData const&) { return JBIG2::SegmentType::ImmediateLosslessHalftoneRegion; },
+        [](JBIG2::IntermediateHalftoneRegionSegmentData const&) { return JBIG2::SegmentType::IntermediateHalftoneRegion; },
         [](JBIG2::ImmediateGenericRegionSegmentData const&) { return JBIG2::SegmentType::ImmediateGenericRegion; },
         [](JBIG2::ImmediateLosslessGenericRegionSegmentData const&) { return JBIG2::SegmentType::ImmediateLosslessGenericRegion; },
         [](JBIG2::IntermediateGenericRegionSegmentData const&) { return JBIG2::SegmentType::IntermediateGenericRegion; },
@@ -2624,7 +2688,7 @@ ErrorOr<void> JBIG2Writer::encode_with_explicit_data(Stream& stream, JBIG2::File
 
     TRY(encode_jbig2_header(stream, file_data.header));
 
-    JBIG2EncodingContext context;
+    JBIG2EncodingContext context { file_data.segments };
     for (auto const& segment : file_data.segments) {
         if (context.segment_by_id.set(segment.header.segment_number, &segment) != HashSetResult::InsertedNewEntry)
             return Error::from_string_literal("JBIG2Writer: Duplicate segment number");

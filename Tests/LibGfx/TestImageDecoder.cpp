@@ -366,6 +366,8 @@ TEST_CASE(test_jbig2_decode)
         TEST_INPUT("jbig2/bitmap-trailing-7fff-stripped-harder.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-trailing-7fff-stripped-harder-refine.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-refine.jbig2"sv),
+        TEST_INPUT("jbig2/bitmap-refine-page.jbig2"sv),
+        TEST_INPUT("jbig2/bitmap-refine-page-subrect.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-refine-customat.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-refine-lossless.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-refine-refine.jbig2"sv),
@@ -373,6 +375,7 @@ TEST_CASE(test_jbig2_decode)
         TEST_INPUT("jbig2/bitmap-refine-template1.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-refine-template1-tpgron.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-halftone.jbig2"sv),
+        TEST_INPUT("jbig2/bitmap-halftone-refine.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-halftone-template1.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-halftone-template2.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-halftone-template3.jbig2"sv),
@@ -381,6 +384,7 @@ TEST_CASE(test_jbig2_decode)
         TEST_INPUT("jbig2/bitmap-symbol.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-symbol-manyrefs.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-symbol-negative-sbdsoffset.jbig2"sv),
+        TEST_INPUT("jbig2/bitmap-symbol-refine.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-symbol-symhuff-texthuff.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-symbol-symhuffB5B3-texthuffB7B9B12.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-symbol-symhuff-texthuffB10B13.jbig2"sv),
@@ -413,14 +417,9 @@ TEST_CASE(test_jbig2_decode)
         // - lossless halftone (code support added in #26043)
         // - rotated halftone (code support added in #26044)
         // - composition test for halftone regions
-        // - intermediate halftone / refinement of halftone regions
         // - negative position in composition (code support added in #26046)
-        // - intermediate text regions (code support added in #26197)
-        // - intermediate halftone regions (code support added in #26197)
-        // - intermediate direct regions (code support added in #26197)
         // - symbol refinement referring to symbol in same segment
         // Missing tests for things that aren't implemented yet:
-        // - immediate refinement regions not referring to a direct region (i.e. refining the page)
         // - exttemplate
         // - colors
     };

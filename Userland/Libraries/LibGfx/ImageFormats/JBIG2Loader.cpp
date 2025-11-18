@@ -3190,16 +3190,19 @@ static ErrorOr<RegionResult> decode_generic_refinement_region(JBIG2LoadingContex
 
     // "3) Determine the buffer associated with the region segment that this segment refers to."
     // Details described in 7.4.7.4 Reference bitmap selection.
-    BilevelImage const* reference_bitmap = nullptr;
-    if (segment.referred_to_segments.size() == 1) {
-        reference_bitmap = segment.referred_to_segments[0]->aux_buffer.ptr();
-        VERIFY(reference_bitmap->width() == segment.referred_to_segments[0]->aux_buffer_information_field.width);
-        VERIFY(reference_bitmap->height() == segment.referred_to_segments[0]->aux_buffer_information_field.height);
-    } else {
-        // When adding support for this and for intermediate generic refinement regions, make sure to only allow
-        // this case for immediate generic refinement regions.
-        return Error::from_string_literal("JBIG2ImageDecoderPlugin: Generic refinement region without reference segment not yet implemented");
-    }
+    BilevelSubImage reference_bitmap = [&]() {
+        if (segment.referred_to_segments.size() == 1) {
+            auto reference_bitmap = segment.referred_to_segments[0]->aux_buffer;
+            VERIFY(reference_bitmap->width() == segment.referred_to_segments[0]->aux_buffer_information_field.width);
+            VERIFY(reference_bitmap->height() == segment.referred_to_segments[0]->aux_buffer_information_field.height);
+            return reference_bitmap->as_subbitmap();
+        }
+
+        // Enforced by validate_segment_header_references() earlier.
+        VERIFY(segment.type() != JBIG2::SegmentType::IntermediateGenericRefinementRegion);
+
+        return context.page.bits->subbitmap(information_field.rect());
+    }();
 
     // "4) Invoke the generic refinement region decoding procedure described in 6.3, with the parameters to the
     //     generic refinement region decoding procedure set as shown in Table 38."
@@ -3208,8 +3211,7 @@ static ErrorOr<RegionResult> decode_generic_refinement_region(JBIG2LoadingContex
     inputs.region_width = information_field.width;
     inputs.region_height = information_field.height;
     inputs.gr_template = arithmetic_coding_template;
-    auto subbitmap = reference_bitmap->as_subbitmap();
-    inputs.reference_bitmap = &subbitmap;
+    inputs.reference_bitmap = &reference_bitmap;
     inputs.reference_x_offset = 0;
     inputs.reference_y_offset = 0;
     inputs.is_typical_prediction_used = typical_prediction_generic_refinement_on;
@@ -3666,7 +3668,7 @@ ErrorOr<ImageFrameDescriptor> JBIG2ImageDecoderPlugin::frame(size_t index, Optio
     return ImageFrameDescriptor { move(bitmap), 0 };
 }
 
-ErrorOr<ByteBuffer> JBIG2ImageDecoderPlugin::decode_embedded(Vector<ReadonlyBytes> data)
+ErrorOr<NonnullOwnPtr<JBIG2ImageDecoderPlugin>> JBIG2ImageDecoderPlugin::create_embedded_jbig2_decoder(Vector<ReadonlyBytes> data)
 {
     auto plugin = TRY(adopt_nonnull_own_or_enomem(new (nothrow) JBIG2ImageDecoderPlugin({})));
     plugin->m_context->organization = JBIG2::Organization::Embedded;
@@ -3682,8 +3684,29 @@ ErrorOr<ByteBuffer> JBIG2ImageDecoderPlugin::decode_embedded(Vector<ReadonlyByte
         return Error::from_string_literal("JBIG2ImageDecoderPlugin: Embedded JBIG2 data must have exactly one page");
 
     TRY(decode_data(*plugin->m_context));
+    return plugin;
+}
 
-    return plugin->m_context->page.bits->to_byte_buffer();
+ErrorOr<NonnullRefPtr<BilevelImage>> JBIG2ImageDecoderPlugin::decode_embedded(Vector<ReadonlyBytes> data)
+{
+    auto plugin = TRY(create_embedded_jbig2_decoder(data));
+    return *plugin->m_context->page.bits;
+}
+
+ErrorOr<NonnullRefPtr<BilevelImage>> JBIG2ImageDecoderPlugin::decode_embedded_intermediate_region_segment(Vector<ReadonlyBytes> data, u32 segment_number)
+{
+    auto plugin = TRY(create_embedded_jbig2_decoder(data));
+
+    auto target_segment = plugin->m_context->segments.find_if([&segment_number](auto const& segment) {
+        return segment.header.segment_number == segment_number;
+    });
+    if (target_segment == plugin->m_context->segments.end())
+        return Error::from_string_literal("JBIG2ImageDecoderPlugin: Segment number not found in embedded JBIG2 data");
+
+    if (!is_intermediate_region_segment(target_segment->type()))
+        return Error::from_string_literal("JBIG2ImageDecoderPlugin: Target segment is not an intermediate region segment");
+
+    return *target_segment->aux_buffer;
 }
 
 }
