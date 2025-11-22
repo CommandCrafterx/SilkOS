@@ -338,9 +338,11 @@ TEST_CASE(test_jbig2_decode)
         TEST_INPUT("jbig2/bitmap-p32-eof.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-initially-unknown-size.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-composite-and-xnor.jbig2"sv),
+        TEST_INPUT("jbig2/bitmap-composite-and-xnor-halftone.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-composite-and-xnor-refine.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-composite-and-xnor-text.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-composite-or-xor-replace.jbig2"sv),
+        TEST_INPUT("jbig2/bitmap-composite-or-xor-replace-halftone.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-composite-or-xor-replace-refine.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-composite-or-xor-replace-text.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-customat.jbig2"sv),
@@ -392,6 +394,7 @@ TEST_CASE(test_jbig2_decode)
         TEST_INPUT("jbig2/bitmap-symbol-symhuff-texthuffB10B13.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-symbol-symhuffcustom-texthuffcustom.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-symbol-symhuffuncompressed-texthuff.jbig2"sv),
+        TEST_INPUT("jbig2/bitmap-symbol-textcomposite.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-symbol-textrefine.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-symbol-textrefine-customat.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-symbol-textrefine-negative-delta-width.jbig2"sv),
@@ -416,10 +419,8 @@ TEST_CASE(test_jbig2_decode)
         TEST_INPUT("jbig2/bitmap-symbol-texttoprighttranspose.jbig2"sv),
         TEST_INPUT("jbig2/bitmap-symbol-texttranspose.jbig2"sv),
         // Missing tests, in part because there's no easy way to generate them:
-        // - lossless halftone (code support added in #26043)
         // - rotated halftone (code support added in #26044)
         // - composition test for halftone regions
-        // - negative position in composition (code support added in #26046)
         // - symbol refinement referring to symbol in same segment
         // Missing tests for things that aren't implemented yet:
         // - exttemplate

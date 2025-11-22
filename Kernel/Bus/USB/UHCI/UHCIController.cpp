@@ -152,7 +152,7 @@ UNMAP_AFTER_INIT ErrorOr<void> UHCIController::create_structures()
     m_isochronous_transfer_pool = TRY(MM.allocate_dma_buffer_page("UHCI Isochronous Descriptor Pool"sv, Memory::Region::Access::ReadWrite, Memory::MemoryType::IO));
 
     // Set up the Isochronous Transfer Descriptor list
-    m_iso_td_list.resize(UHCI_NUMBER_OF_ISOCHRONOUS_TDS);
+    TRY(m_iso_td_list.try_resize(UHCI_NUMBER_OF_ISOCHRONOUS_TDS));
     for (size_t i = 0; i < m_iso_td_list.size(); i++) {
         auto placement_addr = reinterpret_cast<void*>(m_isochronous_transfer_pool->vaddr().get() + (i * sizeof(Kernel::USB::TransferDescriptor)));
         auto paddr = static_cast<u32>(m_isochronous_transfer_pool->physical_page(0)->paddr().get() + (i * sizeof(Kernel::USB::TransferDescriptor)));
@@ -343,7 +343,7 @@ ErrorOr<void> UHCIController::initialize_device(USB::Device& device)
 
     // Fetch the configuration descriptors from the device
     auto& configurations = device.configurations<UHCIController>({});
-    configurations.ensure_capacity(dev_descriptor.num_configurations);
+    TRY(configurations.try_ensure_capacity(dev_descriptor.num_configurations));
     for (u8 configuration = 0u; configuration < dev_descriptor.num_configurations; configuration++) {
         USBConfigurationDescriptor configuration_descriptor;
         transfer_length = TRY(device.control_transfer(USB_REQUEST_TRANSFER_DIRECTION_DEVICE_TO_HOST, USB_REQUEST_GET_DESCRIPTOR, (DESCRIPTOR_TYPE_CONFIGURATION << 8u) | configuration, 0, sizeof(USBConfigurationDescriptor), &configuration_descriptor));

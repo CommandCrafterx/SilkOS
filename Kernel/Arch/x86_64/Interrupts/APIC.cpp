@@ -339,7 +339,7 @@ UNMAP_AFTER_INIT void APIC::setup_ap_boot_environment()
     memcpy(apic_startup_region_ptr, reinterpret_cast<void const*>(apic_ap_start), apic_ap_start_size);
 
     // Allocate enough stacks for all APs
-    m_ap_temporary_boot_stacks.ensure_capacity(aps_to_enable);
+    m_ap_temporary_boot_stacks.try_ensure_capacity(aps_to_enable).release_value_but_fixme_should_propagate_errors();
     for (u32 i = 0; i < aps_to_enable; i++) {
         auto stack_region_or_error = MM.allocate_kernel_region(Thread::default_kernel_stack_size, {}, Memory::Region::Access::ReadWrite, AllocationStrategy::AllocateNow);
         if (stack_region_or_error.is_error()) {
@@ -360,7 +360,7 @@ UNMAP_AFTER_INIT void APIC::setup_ap_boot_environment()
     }
 
     // Allocate Processor structures for all APs and store the pointer to the data
-    m_ap_processor_info.resize(aps_to_enable);
+    m_ap_processor_info.try_resize(aps_to_enable).release_value_but_fixme_should_propagate_errors();
     for (size_t i = 0; i < aps_to_enable; i++)
         m_ap_processor_info[i] = adopt_nonnull_own_or_enomem(new (nothrow) Processor()).release_value_but_fixme_should_propagate_errors();
     auto* ap_processor_info_array = &ap_stack_array[aps_to_enable];
@@ -399,7 +399,7 @@ UNMAP_AFTER_INIT void APIC::do_boot_aps()
     // because we won't be able to send FlushTLB messages, so we have to
     // have all memory set up for the threads so that when the APs are
     // starting up, they can access all the memory properly
-    m_ap_idle_threads.resize(aps_to_enable);
+    m_ap_idle_threads.try_resize(aps_to_enable).release_value_but_fixme_should_propagate_errors();
     for (u32 i = 0; i < aps_to_enable; i++)
         m_ap_idle_threads[i] = Scheduler::create_ap_idle_thread(i + 1);
 

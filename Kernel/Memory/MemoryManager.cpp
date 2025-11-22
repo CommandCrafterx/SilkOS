@@ -256,7 +256,7 @@ UNMAP_AFTER_INIT void MemoryManager::parse_memory_map()
 {
     // Register used memory regions that we know of.
     m_global_data.with([this](auto& global_data) {
-        global_data.used_memory_ranges.ensure_capacity(4);
+        global_data.used_memory_ranges.try_ensure_capacity(4).release_value_but_fixme_should_propagate_errors();
 #if ARCH(X86_64)
         // NOTE: We don't touch the first 1 MiB of RAM on x86-64 even if it's usable as indicated
         // by a certain memory map. There are 2 reasons for this:
@@ -574,7 +574,7 @@ UNMAP_AFTER_INIT void MemoryManager::parse_memory_map_fdt(MemoryManager::GlobalD
                     state.state = State::Root;
                     break;
                 case State::InMemory:
-                    global_data.physical_memory_ranges.grow_capacity(global_data.physical_memory_ranges.size() + state.reg.size());
+                    global_data.physical_memory_ranges.try_grow_capacity(global_data.physical_memory_ranges.size() + state.reg.size()).release_value_but_fixme_should_propagate_errors();
 
                     for (auto const& reg_entry : state.reg) {
                         dbgln("MM: Memory Range {}: address: {} size {:#x}", node_name, PhysicalAddress { reg_entry.start_addr }, reg_entry.size);
@@ -589,8 +589,8 @@ UNMAP_AFTER_INIT void MemoryManager::parse_memory_map_fdt(MemoryManager::GlobalD
                     if (state.reg.is_empty())
                         dbgln("MM: Skipping dynamically allocated reserved memory region {}", node_name);
 
-                    global_data.physical_memory_ranges.grow_capacity(global_data.physical_memory_ranges.size() + state.reg.size());
-                    global_data.used_memory_ranges.grow_capacity(global_data.used_memory_ranges.size() + state.reg.size());
+                    global_data.physical_memory_ranges.try_grow_capacity(global_data.physical_memory_ranges.size() + state.reg.size()).release_value_but_fixme_should_propagate_errors();
+                    global_data.used_memory_ranges.try_grow_capacity(global_data.used_memory_ranges.size() + state.reg.size()).release_value_but_fixme_should_propagate_errors();
 
                     for (auto const& reg_entry : state.reg) {
                         dbgln("MM: Reserved Range {}: address: {} size {:#x}", node_name, PhysicalAddress { reg_entry.start_addr }, reg_entry.size);
@@ -640,7 +640,7 @@ UNMAP_AFTER_INIT void MemoryManager::parse_memory_map_fdt(MemoryManager::GlobalD
                         VERIFY(state.address_cells);
                         VERIFY(state.size_cells);
 
-                        state.reg.ensure_capacity(data.size() / ((state.address_cells + state.size_cells) * sizeof(u32)));
+                        state.reg.try_ensure_capacity(data.size() / ((state.address_cells + state.size_cells) * sizeof(u32))).release_value_but_fixme_should_propagate_errors();
 
                         FixedMemoryStream reg_stream { data };
 
