@@ -132,6 +132,46 @@ Optional<size_t> GIC::pending_interrupt() const
     return interrupt_number;
 }
 
+ErrorOr<size_t> GIC::translate_interrupt_specifier_to_interrupt_number(ReadonlyBytes interrupt_specifier) const
+{
+    // https://www.kernel.org/doc/Documentation/devicetree/bindings/interrupt-controller/arm,gic.yaml
+
+    if (interrupt_specifier.size() != 3 * sizeof(u32))
+        return EINVAL;
+
+    FixedMemoryStream stream { interrupt_specifier };
+
+    enum class InterruptType : u32 {
+        SPI = 0,
+        PPI = 1,
+    };
+
+    auto interrupt_type = MUST(stream.read_value<BigEndian<InterruptType>>());
+    auto interrupt_number = MUST(stream.read_value<BigEndian<u32>>());
+    auto flags = MUST(stream.read_value<BigEndian<u32>>());
+
+    (void)flags; // FIXME: Use this to configure the trigger mode properly.
+
+    // Section 2.2.1 Interrupt IDs
+    if (interrupt_type == InterruptType::SPI) {
+        // "Interrupt numbers ID32-ID1019 are used for SPIs."
+        if (interrupt_number + 32 > 1019)
+            return ERANGE;
+
+        return interrupt_number + 32;
+    }
+
+    if (interrupt_type == InterruptType::PPI) {
+        // "ID16-ID31 are used for PPIs"
+        if (interrupt_number + 16 > 31)
+            return ERANGE;
+
+        return interrupt_number + 16;
+    }
+
+    return EINVAL;
+}
+
 UNMAP_AFTER_INIT GIC::GIC(Memory::TypedMapping<DistributorRegisters volatile> distributor_registers, Memory::TypedMapping<CPUInterfaceRegisters volatile> cpu_interface_registers)
     : m_distributor_registers(move(distributor_registers))
     , m_cpu_interface_registers(move(cpu_interface_registers))
@@ -184,7 +224,7 @@ static constinit Array const compatibles_array = {
     "arm,cortex-a15-gic"sv,
 };
 
-EARLY_DEVICETREE_DRIVER(GICDriver, compatibles_array);
+INTERRUPT_CONTROLLER_DEVICETREE_DRIVER(GICDriver, compatibles_array);
 
 // https://www.kernel.org/doc/Documentation/devicetree/bindings/interrupt-controller/arm,gic.yaml
 ErrorOr<void> GICDriver::probe(DeviceTree::Device const& device, StringView) const
@@ -192,15 +232,10 @@ ErrorOr<void> GICDriver::probe(DeviceTree::Device const& device, StringView) con
     auto distributor_registers_resource = TRY(device.get_resource(0));
     auto cpu_interface_registers_resource = TRY(device.get_resource(1));
 
-    DeviceTree::DeviceRecipe<NonnullLockRefPtr<IRQController>> recipe {
-        name(),
-        device.node_name(),
-        [distributor_registers_resource, cpu_interface_registers_resource] {
-            return GIC::try_to_initialize(distributor_registers_resource, cpu_interface_registers_resource);
-        },
-    };
+    auto gic = TRY(GIC::try_to_initialize(distributor_registers_resource, cpu_interface_registers_resource));
 
-    InterruptManagement::add_recipe(move(recipe));
+    MUST(DeviceTree::Management::register_interrupt_controller(device, *gic));
+    MUST(InterruptManagement::register_interrupt_controller(move(gic)));
 
     return {};
 }

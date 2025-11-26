@@ -62,12 +62,30 @@ u8 PLIC::pending_interrupt() const
     return m_registers->contexts[m_boot_hart_supervisor_mode_context_id].claim_complete;
 }
 
+ErrorOr<size_t> PLIC::translate_interrupt_specifier_to_interrupt_number(ReadonlyBytes interrupt_specifier) const
+{
+    // https://www.kernel.org/doc/Documentation/devicetree/bindings/interrupt-controller/sifive,plic-1.0.0.yaml
+    // For generic PLICs the #interrupt-cells property should be 1 and the interrupt specifier should simply be the interrupt number.
+
+    if (interrupt_specifier.size() != 1 * sizeof(u32))
+        return EINVAL;
+
+    FixedMemoryStream stream { interrupt_specifier };
+
+    auto interrupt_number = MUST(stream.read_value<BigEndian<u32>>());
+
+    if (interrupt_number >= m_interrupt_count)
+        return ERANGE;
+
+    return interrupt_number;
+}
+
 static constinit Array const compatibles_array = {
     "riscv,plic0"sv,
     "sifive,plic-1.0.0"sv,
 };
 
-EARLY_DEVICETREE_DRIVER(PLICDriver, compatibles_array);
+INTERRUPT_CONTROLLER_DEVICETREE_DRIVER(PLICDriver, compatibles_array);
 
 // https://www.kernel.org/doc/Documentation/devicetree/bindings/interrupt-controller/sifive,plic-1.0.0.yaml
 ErrorOr<void> PLICDriver::probe(DeviceTree::Device const& device, StringView) const
@@ -97,13 +115,12 @@ ErrorOr<void> PLICDriver::probe(DeviceTree::Device const& device, StringView) co
         if (!cpu->is_compatible_with("riscv"sv))
             return EINVAL;
 
-        u64 interrupt_specifier = 0;
-        if (interrupt.interrupt_identifier.size() == sizeof(u32))
-            interrupt_specifier = *reinterpret_cast<BigEndian<u32> const*>(interrupt.interrupt_identifier.data());
-        else if (interrupt.interrupt_identifier.size() == sizeof(u64))
-            interrupt_specifier = *reinterpret_cast<BigEndian<u64> const*>(interrupt.interrupt_identifier.data());
-        else
+        // https://www.kernel.org/doc/Documentation/devicetree/bindings/interrupt-controller/riscv,cpu-intc.yaml
+        // #interrupt-cells: "const: 1"
+        if (interrupt.interrupt_specifier.size() != sizeof(u32))
             return EINVAL;
+
+        auto interrupt_specifier = *reinterpret_cast<BigEndian<u32> const*>(interrupt.interrupt_specifier.data());
 
         // https://www.kernel.org/doc/Documentation/devicetree/bindings/riscv/cpus.yaml
         // reg: "The hart ID of this CPU node."
@@ -114,16 +131,11 @@ ErrorOr<void> PLICDriver::probe(DeviceTree::Device const& device, StringView) co
         }
     }
 
-    DeviceTree::DeviceRecipe<NonnullLockRefPtr<IRQController>> recipe {
-        name(),
-        device.node_name(),
-        [physical_address, max_interrupt_id, boot_hart_supervisor_mode_context_id]() -> ErrorOr<NonnullLockRefPtr<IRQController>> {
-            auto registers_mapping = TRY(Memory::map_typed_writable<PLIC::RegisterMap volatile>(physical_address));
-            return adopt_nonnull_lock_ref_or_enomem(new (nothrow) PLIC(move(registers_mapping), max_interrupt_id + 1, boot_hart_supervisor_mode_context_id));
-        },
-    };
+    auto registers_mapping = TRY(Memory::map_typed_writable<PLIC::RegisterMap volatile>(physical_address));
+    auto interrupt_controller = TRY(adopt_nonnull_lock_ref_or_enomem(new (nothrow) PLIC(move(registers_mapping), max_interrupt_id + 1, boot_hart_supervisor_mode_context_id)));
 
-    InterruptManagement::add_recipe(move(recipe));
+    MUST(DeviceTree::Management::register_interrupt_controller(device, *interrupt_controller));
+    MUST(InterruptManagement::register_interrupt_controller(move(interrupt_controller)));
 
     return {};
 }

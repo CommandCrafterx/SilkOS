@@ -194,32 +194,15 @@ EARLY_DEVICETREE_DRIVER(BCM2835TimerDriver, compatibles_array);
 // https://www.kernel.org/doc/Documentation/devicetree/bindings/timer/brcm,bcm2835-system-timer.txt
 ErrorOr<void> BCM2835TimerDriver::probe(DeviceTree::Device const& device, StringView) const
 {
-    auto const interrupts = TRY(device.node().interrupts(DeviceTree::get()));
-    if (interrupts.size() != 4)
-        return EINVAL; // The devicetree binding requires 4 interrupts.
+    auto physical_address = TRY(device.get_resource(0)).paddr;
+    auto registers_mapping = TRY(Memory::map_typed_writable<TimerRegisters volatile>(physical_address));
 
     // This driver currently only uses channel 1.
-    auto const& interrupt = interrupts[1];
+    auto interrupt_number = TRY(device.get_interrupt_number(1));
 
-    // FIXME: Don't depend on a specific interrupt descriptor format and implement proper devicetree interrupt mapping/translation.
-    if (!interrupt.domain_root->is_compatible_with("brcm,bcm2836-armctrl-ic"sv))
-        return ENOTSUP;
-    if (interrupt.interrupt_identifier.size() != sizeof(BigEndian<u64>))
-        return ENOTSUP;
-    auto const interrupt_number = *reinterpret_cast<BigEndian<u64> const*>(interrupt.interrupt_identifier.data()) & 0xffff'ffff;
+    auto timer = TRY(adopt_nonnull_lock_ref_or_enomem(new (nothrow) Timer(move(registers_mapping), interrupt_number)));
 
-    auto physical_address = TRY(device.get_resource(0)).paddr;
-
-    DeviceTree::DeviceRecipe<NonnullLockRefPtr<HardwareTimerBase>> recipe {
-        name(),
-        device.node_name(),
-        [physical_address, interrupt_number]() -> ErrorOr<NonnullLockRefPtr<HardwareTimerBase>> {
-            auto registers_mapping = TRY(Memory::map_typed_writable<TimerRegisters volatile>(physical_address));
-            return adopt_nonnull_lock_ref_or_enomem(new (nothrow) Timer(move(registers_mapping), interrupt_number));
-        },
-    };
-
-    TimeManagement::add_recipe(move(recipe));
+    MUST(TimeManagement::register_hardware_timer(move(timer)));
 
     return {};
 }

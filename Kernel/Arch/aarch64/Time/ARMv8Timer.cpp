@@ -105,8 +105,6 @@ EARLY_DEVICETREE_DRIVER(ARMv8TimerDriver, compatibles_array);
 // https://www.kernel.org/doc/Documentation/devicetree/bindings/timer/arm,arch_timer.yaml
 ErrorOr<void> ARMv8TimerDriver::probe(DeviceTree::Device const& device, StringView) const
 {
-    auto const interrupts = TRY(device.node().interrupts(DeviceTree::get()));
-
     if (device.node().has_property("interrupt-names"sv))
         return ENOTSUP; // TODO: Support the interrupt-names property.
 
@@ -118,36 +116,11 @@ ErrorOr<void> ARMv8TimerDriver::probe(DeviceTree::Device const& device, StringVi
     };
 
     // Use the EL1 virtual timer, as that timer should should be accessible to us both on device and in a VM.
-    if (interrupts.size() < (to_underlying(DeviceTreeTimerInterruptIndex::EL1Virtual) + 1))
-        return ENOTSUP;
+    auto interrupt_number = TRY(device.get_interrupt_number(to_underlying(DeviceTreeTimerInterruptIndex::EL1Virtual)));
 
-    auto const& interrupt = interrupts[to_underlying(DeviceTreeTimerInterruptIndex::EL1Virtual)];
+    auto timer = TRY(ARMv8Timer::initialize(interrupt_number));
 
-    // FIXME: Don't depend on a specific interrupt descriptor format and implement proper devicetree interrupt mapping/translation.
-    if (!interrupt.domain_root->is_compatible_with("arm,gic-400"sv) && !interrupt.domain_root->is_compatible_with("arm,cortex-a15-gic"sv))
-        return ENOTSUP;
-    if (interrupt.interrupt_identifier.size() != 3 * sizeof(BigEndian<u32>))
-        return ENOTSUP;
-
-    // The ARM timer uses a PPI (Private Peripheral Interrupt).
-    // GIC interrupts 16-31 are for PPIs, so add 16 to get the GIC interrupt ID.
-
-    // The interrupt type is in the first cell. It should be 1 for PPIs.
-    if (reinterpret_cast<BigEndian<u32> const*>(interrupt.interrupt_identifier.data())[0] != 1)
-        return ENOTSUP;
-
-    // The interrupt number is in the second cell.
-    auto interrupt_number = (reinterpret_cast<BigEndian<u32> const*>(interrupt.interrupt_identifier.data())[1]) + 16;
-
-    DeviceTree::DeviceRecipe<NonnullLockRefPtr<HardwareTimerBase>> recipe {
-        name(),
-        device.node_name(),
-        [interrupt_number] {
-            return ARMv8Timer::initialize(interrupt_number);
-        },
-    };
-
-    TimeManagement::add_recipe(move(recipe));
+    MUST(TimeManagement::register_hardware_timer(move(timer)));
 
     return {};
 }

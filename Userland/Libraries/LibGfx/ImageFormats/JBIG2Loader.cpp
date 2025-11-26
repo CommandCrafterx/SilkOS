@@ -141,6 +141,18 @@ struct SegmentData {
     // Set on dictionary segments after they've been decoded.
     Optional<Vector<BilevelSubImage>> symbols;
 
+    struct BitmapCodingContextState {
+        Optional<JBIG2::GenericContexts> generic_contexts;
+        Optional<JBIG2::RefinementContexts> refinement_contexts;
+        bool used_huffman_encoding { false };
+        bool used_refinement_or_aggregate_coding { false };
+        u8 symbol_template { 0 };
+        u8 refinement_template { 0 };
+        Array<JBIG2::AdaptiveTemplatePixel, 4> adaptive_template_pixels {};
+        Array<JBIG2::AdaptiveTemplatePixel, 2> refinement_adaptive_template_pixels {};
+    };
+    Optional<BitmapCodingContextState> retained_bitmap_coding_contexts; // Only set on dictionary segments with bitmap_coding_context_retained set.
+
     // Set on pattern segments after they've been decoded.
     Optional<Vector<BilevelSubImage>> patterns;
 
@@ -1196,17 +1208,8 @@ struct GenericRefinementRegionDecodingInputParameters {
     Array<JBIG2::AdaptiveTemplatePixel, 2> adaptive_template_pixels {}; // "GRATX" / "GRATY" in spec.
 };
 
-struct RefinementContexts {
-    explicit RefinementContexts(u8 refinement_template)
-    {
-        contexts.resize(1 << (refinement_template == 0 ? 13 : 10));
-    }
-
-    Vector<MQArithmeticCoderContext> contexts; // "GR" (+ binary suffix) in spec.
-};
-
 // 6.3 Generic Refinement Region Decoding Procedure
-static ErrorOr<NonnullRefPtr<BilevelImage>> generic_refinement_region_decoding_procedure(GenericRefinementRegionDecodingInputParameters& inputs, MQArithmeticDecoder& decoder, RefinementContexts& contexts)
+static ErrorOr<NonnullRefPtr<BilevelImage>> generic_refinement_region_decoding_procedure(GenericRefinementRegionDecodingInputParameters& inputs, MQArithmeticDecoder& decoder, JBIG2::RefinementContexts& contexts)
 {
     VERIFY(inputs.gr_template == 0 || inputs.gr_template == 1);
 
@@ -1414,7 +1417,7 @@ struct TextContexts {
 };
 
 // 6.4 Text Region Decoding Procedure
-static ErrorOr<NonnullRefPtr<BilevelImage>> text_region_decoding_procedure(TextRegionDecodingInputParameters const& inputs, Optional<TextContexts>& text_contexts, Optional<RefinementContexts>& refinement_contexts)
+static ErrorOr<NonnullRefPtr<BilevelImage>> text_region_decoding_procedure(TextRegionDecodingInputParameters const& inputs, Optional<TextContexts>& text_contexts, Optional<JBIG2::RefinementContexts>& refinement_contexts)
 {
     BigEndianInputBitStream* bit_stream = nullptr;
     MQArithmeticDecoder* decoder = nullptr;
@@ -1748,19 +1751,17 @@ struct SymbolContexts {
 };
 
 // 6.5 Symbol Dictionary Decoding Procedure
-static ErrorOr<Vector<BilevelSubImage>> symbol_dictionary_decoding_procedure(SymbolDictionaryDecodingInputParameters const& inputs, ReadonlyBytes data)
+static ErrorOr<Vector<BilevelSubImage>> symbol_dictionary_decoding_procedure(SymbolDictionaryDecodingInputParameters const& inputs, Optional<JBIG2::GenericContexts>& generic_contexts, Optional<JBIG2::RefinementContexts>& refinement_contexts, ReadonlyBytes data)
 {
     Optional<FixedMemoryStream> stream;
     Optional<BigEndianInputBitStream> bit_stream;
     Optional<MQArithmeticDecoder> decoder;
-    Optional<JBIG2::GenericContexts> generic_contexts;
     Optional<SymbolContexts> symbol_contexts;
     if (inputs.uses_huffman_encoding) {
         stream = FixedMemoryStream { data };
         bit_stream = BigEndianInputBitStream { MaybeOwned { stream.value() } };
     } else {
         decoder = TRY(MQArithmeticDecoder::initialize(data));
-        generic_contexts = JBIG2::GenericContexts { inputs.symbol_template };
         symbol_contexts = SymbolContexts {};
     }
 
@@ -1798,7 +1799,6 @@ static ErrorOr<Vector<BilevelSubImage>> symbol_dictionary_decoding_procedure(Sym
 
     // 6.5.8.1 Direct-coded symbol bitmap
     Optional<TextContexts> text_contexts;
-    Optional<RefinementContexts> refinement_contexts;
 
     // This belongs in 6.5.5 1) below, but also needs to be captured by read_symbol_bitmap here.
     Vector<BilevelSubImage> new_symbols;
@@ -1848,8 +1848,6 @@ static ErrorOr<Vector<BilevelSubImage>> symbol_dictionary_decoding_procedure(Sym
 
         if (!text_contexts.has_value())
             text_contexts = TextContexts { code_length };
-        if (!refinement_contexts.has_value())
-            refinement_contexts = RefinementContexts(inputs.refinement_template);
 
         if (number_of_symbol_instances > 1) {
             // "2) If REFAGGNINST is greater than one, then decode the bitmap itself using a text region decoding procedure
@@ -2033,7 +2031,9 @@ static ErrorOr<Vector<BilevelSubImage>> symbol_dictionary_decoding_procedure(Sym
             if (!opt_delta_width.has_value())
                 break;
 
-            VERIFY(number_of_symbols_decoded < inputs.number_of_new_symbols);
+            if (number_of_symbols_decoded >= inputs.number_of_new_symbols)
+                return Error::from_string_literal("JBIG2ImageDecoderPlugin: Invalid bitstream, too many symbols decoded in symbol dictionary");
+
             // "   Otherwise let DW be the decoded value and set:"
             //         SYMWIDTH = SYMWIDTH + DW
             //         TOTWIDTH = TOTWIDTH + SYMWIDTH"
@@ -2438,14 +2438,17 @@ static ErrorOr<void> decode_symbol_dictionary(JBIG2LoadingContext& context, Segm
     // but having the custom tables available is convenient for collecting huffman tables below.
     Vector<BilevelSubImage> symbols;
     Vector<JBIG2::HuffmanTable const*> custom_tables;
+    SegmentData const* last_referred_to_symbol_dictionary_segment = nullptr;
     for (auto const* referred_to_segment : segment.referred_to_segments) {
         dbgln_if(JBIG2_DEBUG, "Symbol segment refers to segment id {}", referred_to_segment->header.segment_number);
-        if (referred_to_segment->symbols.has_value())
+        if (referred_to_segment->symbols.has_value()) {
             symbols.extend(referred_to_segment->symbols.value());
-        else if (referred_to_segment->huffman_table.has_value())
+            last_referred_to_symbol_dictionary_segment = referred_to_segment;
+        } else if (referred_to_segment->huffman_table.has_value()) {
             custom_tables.append(&referred_to_segment->huffman_table.value());
-        else
+        } else {
             return Error::from_string_literal("JBIG2ImageDecoderPlugin: Symbol segment referred-to segment without symbols or huffman table");
+        }
     }
 
     // 7.4.2.1 Symbol dictionary segment data header
@@ -2531,13 +2534,46 @@ static ErrorOr<void> decode_symbol_dictionary(JBIG2LoadingContext& context, Segm
     // "2) Decode (or retrieve the results of decoding) any referred-to symbol dictionary and tables segments."
     // Done further up already.
 
-    // "3) If the "bitmap coding context used" bit in the header was 1, ..."
-    if (bitmap_coding_context_used)
-        return Error::from_string_literal("JBIG2ImageDecoderPlugin: Cannot decode bitmap coding context segment yet");
+    // "3) If the "bitmap coding context used" bit in the header was 1, then, as described in E.3.8, set the arithmetic
+    //     coding statistics for the generic region and generic refinement region decoding procedures to the values
+    //     that they contained at the end of decoding the last-referred-to symbol dictionary segment. That symbol
+    //     dictionary segment's symbol dictionary segment data header must have had the "bitmap coding context
+    //     retained" bit equal to 1. The values of SDHUFF, SDREFAGG, SDTEMPLATE, SDRTEMPLATE,
+    //     and all of the AT locations (both direct and refinement) for this symbol dictionary must match the
+    //     corresponding values from the symbol dictionary whose context values are being used."
+    Optional<JBIG2::GenericContexts> generic_contexts;
+    Optional<JBIG2::RefinementContexts> refinement_contexts;
+    if (bitmap_coding_context_used) {
+        if (!last_referred_to_symbol_dictionary_segment)
+            return Error::from_string_literal("JBIG2ImageDecoderPlugin: \"bitmap coding context used\" bit set, but no last-referred-to symbol dictionary segment present");
+        if (!last_referred_to_symbol_dictionary_segment->retained_bitmap_coding_contexts.has_value())
+            return Error::from_string_literal("JBIG2ImageDecoderPlugin: \"bitmap coding context used\" bit set, but last-referred-to symbol dictionary segment did not set \"bitmap coding context retained\"");
 
+        auto const& last_state = last_referred_to_symbol_dictionary_segment->retained_bitmap_coding_contexts.value();
+        if (last_state.used_huffman_encoding != uses_huffman_encoding)
+            return Error::from_string_literal("JBIG2ImageDecoderPlugin: \"bitmap coding context used\" bit set, but SDHUFF values do not match");
+        if (last_state.used_refinement_or_aggregate_coding != uses_refinement_or_aggregate_coding)
+            return Error::from_string_literal("JBIG2ImageDecoderPlugin: \"bitmap coding context used\" bit set, but SDREFAGG values do not match");
+        if (last_state.symbol_template != template_used)
+            return Error::from_string_literal("JBIG2ImageDecoderPlugin: \"bitmap coding context used\" bit set, but SDTEMPLATE values do not match");
+        if (last_state.refinement_template != refinement_template_used)
+            return Error::from_string_literal("JBIG2ImageDecoderPlugin: \"bitmap coding context used\" bit set, but SDRTEMPLATE values do not match");
+        if (last_state.adaptive_template_pixels != adaptive_template)
+            return Error::from_string_literal("JBIG2ImageDecoderPlugin: \"bitmap coding context used\" bit set, but SDATX / SDATY values do not match");
+        if (last_state.refinement_adaptive_template_pixels != adaptive_refinement_template)
+            return Error::from_string_literal("JBIG2ImageDecoderPlugin: \"bitmap coding context used\" bit set, but SDRATX / SDRATY values do not match");
+
+        generic_contexts = last_state.generic_contexts;
+        refinement_contexts = last_state.refinement_contexts;
+    }
     // "4) If the "bitmap coding context used" bit in the header was 0, then, as described in E.3.7,
     //     reset all the arithmetic coding statistics for the generic region and generic refinement region decoding procedures to zero."
-    // Nothing to do.
+    else {
+        if (!uses_huffman_encoding)
+            generic_contexts = JBIG2::GenericContexts { template_used };
+        if (uses_refinement_or_aggregate_coding)
+            refinement_contexts = JBIG2::RefinementContexts { refinement_template_used };
+    }
 
     // "5) Reset the arithmetic coding statistics for all the contexts of all the arithmetic integer coders to zero."
     // We currently do this by keeping the statistics as locals in symbol_dictionary_decoding_procedure().
@@ -2557,12 +2593,22 @@ static ErrorOr<void> decode_symbol_dictionary(JBIG2LoadingContext& context, Segm
     inputs.adaptive_template_pixels = adaptive_template;
     inputs.refinement_template = refinement_template_used;
     inputs.refinement_adaptive_template_pixels = adaptive_refinement_template;
-    auto result = TRY(symbol_dictionary_decoding_procedure(inputs, segment.data.slice(TRY(stream.tell()))));
+    auto result = TRY(symbol_dictionary_decoding_procedure(inputs, generic_contexts, refinement_contexts, segment.data.slice(TRY(stream.tell()))));
 
     // "7) If the "bitmap coding context retained" bit in the header was 1, then, as described in E.3.8, preserve the current contents
     //     of the arithmetic coding statistics for the generic region and generic refinement region decoding procedures."
-    if (bitmap_coding_context_retained)
-        return Error::from_string_literal("JBIG2ImageDecoderPlugin: Cannot retain bitmap coding context yet");
+    if (bitmap_coding_context_retained) {
+        segment.retained_bitmap_coding_contexts = {
+            move(generic_contexts),
+            move(refinement_contexts),
+            uses_huffman_encoding,
+            uses_refinement_or_aggregate_coding,
+            template_used,
+            refinement_template_used,
+            adaptive_template,
+            adaptive_refinement_template,
+        };
+    }
 
     segment.symbols = move(result);
 
@@ -2760,9 +2806,9 @@ static ErrorOr<RegionResult> decode_text_region(JBIG2LoadingContext& context, Se
     Optional<TextContexts> text_contexts;
     if (!uses_huffman_encoding)
         text_contexts = TextContexts { id_symbol_code_length };
-    Optional<RefinementContexts> refinement_contexts;
+    Optional<JBIG2::RefinementContexts> refinement_contexts;
     if (uses_refinement_coding)
-        refinement_contexts = RefinementContexts { refinement_template };
+        refinement_contexts = JBIG2::RefinementContexts { refinement_template };
 
     // "4) Invoke the text region decoding procedure described in 6.4, with the parameters to the text region decoding procedure set as shown in Table 34."
     TextRegionDecodingInputParameters inputs;
@@ -3184,7 +3230,7 @@ static ErrorOr<RegionResult> decode_generic_refinement_region(JBIG2LoadingContex
     }
 
     // "2) As described in E.3.7, reset all the arithmetic coding statistics to zero."
-    RefinementContexts contexts { arithmetic_coding_template };
+    JBIG2::RefinementContexts contexts { arithmetic_coding_template };
 
     // "3) Determine the buffer associated with the region segment that this segment refers to."
     // Details described in 7.4.7.4 Reference bitmap selection.

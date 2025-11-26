@@ -140,6 +140,8 @@ static_assert(AssertSize<RegionSegmentInformationField, 17>());
 struct AdaptiveTemplatePixel {
     i8 x { 0 };
     i8 y { 0 };
+
+    bool operator<=>(AdaptiveTemplatePixel const&) const = default;
 };
 
 // Figure 7 – Field to which AT pixel locations are restricted
@@ -171,6 +173,15 @@ private:
         VERIFY(template_ == 2 || template_ == 3);
         return 10;
     }
+};
+
+struct RefinementContexts {
+    explicit RefinementContexts(u8 refinement_template)
+    {
+        contexts.resize(1 << (refinement_template == 0 ? 13 : 10));
+    }
+
+    Vector<MQArithmeticCoderContext> contexts; // "GR" (+ binary suffix) in spec.
 };
 
 // 7.4.8 Page information segment syntax

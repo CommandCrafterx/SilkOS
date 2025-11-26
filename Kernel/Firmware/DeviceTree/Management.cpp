@@ -19,8 +19,6 @@ void Management::initialize()
         dmesgln("DeviceTree: System board model: {}", maybe_model->as_string());
 
     MUST(the().scan_node_for_devices(DeviceTree::get()));
-
-    MUST(the().probe_drivers(Driver::ProbeStage::Early));
 }
 
 Management& Management::the()
@@ -39,6 +37,21 @@ ErrorOr<void> Management::register_driver(NonnullOwnPtr<DeviceTree::Driver>&& dr
     }
 
     return {};
+}
+
+ErrorOr<void> Management::register_interrupt_controller(DeviceTree::Device const& device, DeviceTree::InterruptController const& interrupt_controller)
+{
+    TRY(the().m_interrupt_controllers.try_set(&device.node(), &interrupt_controller));
+    return {};
+}
+
+ErrorOr<size_t> Management::resolve_interrupt_number(::DeviceTree::Interrupt interrupt) const
+{
+    auto maybe_interrupt_controller = m_interrupt_controllers.get(interrupt.domain_root);
+    if (!maybe_interrupt_controller.has_value())
+        return ENOENT;
+
+    return maybe_interrupt_controller.value()->translate_interrupt_specifier_to_interrupt_number(interrupt.interrupt_specifier);
 }
 
 ErrorOr<void> Management::scan_node_for_devices(::DeviceTree::Node const& node)
