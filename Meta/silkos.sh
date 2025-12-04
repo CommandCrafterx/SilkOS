@@ -81,7 +81,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 . "${DIR}/shell_include.sh"
 
-exit_if_running_as_root "Do not run serenity.sh as root, your Build directory will become root-owned"
+exit_if_running_as_root "Do not run silkos.sh as root, your Build directory will become root-owned"
 
 host_arch=$(uname -m)
 if [ "$host_arch" = "x86_64" ] || [ "$host_arch" = "amd64" ] || [ "$host_arch" = "x64" ]; then
