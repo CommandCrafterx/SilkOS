@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, Nico Weber <thakis@chromium.org>
+ * Copyright (c) 2022-2025, Nico Weber <thakis@chromium.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -1282,12 +1282,12 @@ ErrorOr<FloatVector3> Profile::to_pcs_a_to_b(TagData const& tag_data, ReadonlyBy
     switch (tag_data.type()) {
     case Lut16TagData::Type: {
         auto const& a_to_b = static_cast<Lut16TagData const&>(tag_data);
-        result = TRY(a_to_b.evaluate(data_color_space(), connection_space(), color));
+        result = TRY(a_to_b.evaluate_to_pcs(data_color_space(), connection_space(), color));
         break;
     }
     case Lut8TagData::Type: {
         auto const& a_to_b = static_cast<Lut8TagData const&>(tag_data);
-        result = TRY(a_to_b.evaluate(data_color_space(), connection_space(), color));
+        result = TRY(a_to_b.evaluate_to_pcs(data_color_space(), connection_space(), color));
         break;
     }
     case LutAToBTagData::Type: {
@@ -1494,9 +1494,10 @@ ErrorOr<void> Profile::from_pcs_b_to_a(TagData const& tag_data, FloatVector3 con
     case Lut16TagData::Type:
         // FIXME
         return Error::from_string_literal("ICC::Profile::to_pcs: BToA*Tag handling for mft2 tags not yet implemented");
-    case Lut8TagData::Type:
-        // FIXME
-        return Error::from_string_literal("ICC::Profile::to_pcs: BToA*Tag handling for mft1 tags not yet implemented");
+    case Lut8TagData::Type: {
+        auto const& a_to_b = static_cast<Lut8TagData const&>(tag_data);
+        return a_to_b.evaluate_from_pcs(connection_space(), data_color_space(), pcs, out_bytes);
+    }
     case LutBToATagData::Type: {
         auto const& b_to_a = static_cast<LutBToATagData const&>(tag_data);
         if (b_to_a.number_of_input_channels() != number_of_components_in_color_space(connection_space()))
