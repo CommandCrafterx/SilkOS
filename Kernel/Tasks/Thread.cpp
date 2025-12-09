@@ -304,7 +304,7 @@ void Thread::unblock_from_blocker(Blocker& blocker)
         VERIFY(!is_stopped());
         unblock();
     };
-    if (Processor::current_in_irq() != 0) {
+    if (Processor::current_in_irq()) {
         Processor::deferred_call_queue([do_unblock = move(do_unblock), self = try_make_weak_ptr().release_value_but_fixme_should_propagate_errors()]() {
             if (auto this_thread = self.strong_ref())
                 do_unblock();
@@ -400,7 +400,7 @@ void Thread::die_if_needed()
         set_state(Thread::State::Dying);
     }
 
-    VERIFY(Processor::current_in_irq() == 0);
+    VERIFY(!Processor::current_in_irq());
     VERIFY(Processor::in_critical() == 0);
     Scheduler::yield();
 
@@ -884,13 +884,9 @@ DispatchSignalResult Thread::dispatch_signal(u8 signal)
 
     dbgln_if(SIGNAL_DEBUG, "Dispatch signal {} to {}, state: {}", signal, *this, state_string());
 
-    if (m_state == Thread::State::Invalid || !is_initialized()) {
-        // Thread has barely been created, we need to wait until it is
-        // at least in Runnable state and is_initialized() returns true,
-        // which indicates that it is fully set up an we actually have
-        // a register state on the stack that we can modify
-        return DispatchSignalResult::Deferred;
-    }
+    // We should only ever dispatch signals to valid and initialized threads.
+    VERIFY(m_state != Thread::State::Invalid);
+    VERIFY(is_initialized());
 
     auto& action = m_process->m_signal_action_data[signal];
     auto sender_pid = m_signal_senders[signal];

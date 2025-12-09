@@ -24,17 +24,24 @@ ErrorOr<void> HostController::add_memory_space_window(Window const& window)
     return m_memory_space_windows.try_append(window);
 }
 
+ErrorOr<void> HostController::add_io_space_window(Window const& window)
+{
+    return m_io_space_windows.try_append(window);
+}
+
 ErrorOr<PhysicalAddress> HostController::translate_bus_address_to_host_address(BARSpaceType space_type, u64 bus_address) const
 {
-    // TODO: Support mapping IO space addresses to memory space addresses.
-    if (space_type == BARSpaceType::IOSpace)
-        return ENOTIMPL;
+    Vector<Window> const* windows = &m_memory_space_windows;
+    if (space_type == BARSpaceType::IOSpace) {
+        windows = &m_io_space_windows;
+    } else {
+        // If no memory space windows were defined, assume identity mapping.
+        // For I/O space, this assumption doesn't make sense since we always need to know to which MMIO address they are mapped to.
+        if (m_memory_space_windows.is_empty())
+            return PhysicalAddress { bus_address };
+    }
 
-    // If no memory space windows were defined, assume identity mapping.
-    if (m_memory_space_windows.is_empty())
-        return PhysicalAddress { bus_address };
-
-    for (auto const& window : m_memory_space_windows) {
+    for (auto const& window : *windows) {
         if (bus_address >= window.bus_address && bus_address < (window.bus_address + window.size))
             return PhysicalAddress { bus_address - window.bus_address + window.host_address.get() };
     }
@@ -236,81 +243,111 @@ void HostController::configure_attached_devices(PCIConfiguration& config)
         // device-generic handling
         auto header_type = read8_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::HEADER_TYPE);
         auto const max_bar = (header_type == 0) ? RegisterOffset::BAR5 : RegisterOffset::BAR1;
+
         for (u32 bar_offset = to_underlying(RegisterOffset::BAR0); bar_offset <= to_underlying(max_bar); bar_offset += 4) {
             auto bar_value = read32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset);
             auto bar_space_type = get_BAR_space_type(bar_value);
             auto bar_prefetchable = (bar_value >> 3) & 1;
-            if (bar_space_type != BARSpaceType::Memory32BitSpace && bar_space_type != BARSpaceType::Memory64BitSpace)
-                continue; // We only support memory-mapped BAR configuration at the moment
+
             if (bar_space_type == BARSpaceType::Memory32BitSpace) {
                 write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset, 0xFFFFFFFF);
                 auto bar_size = read32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset);
                 write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset, bar_value);
                 bar_size &= bar_address_mask;
                 bar_size = (~bar_size) + 1;
+
                 if (bar_size == 0)
                     continue;
+
                 auto mmio_32bit_address = align_up_to(config.mmio_32bit_base, bar_size);
                 if (mmio_32bit_address + bar_size <= config.mmio_32bit_end) {
                     write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset, mmio_32bit_address);
                     config.mmio_32bit_base = mmio_32bit_address + bar_size;
                     continue;
                 }
+
                 auto mmio_64bit_address = align_up_to(config.mmio_64bit_base, bar_size);
                 if (bar_prefetchable && mmio_64bit_address + bar_size <= config.mmio_64bit_end && mmio_64bit_address + bar_size <= NumericLimits<u32>::max()) {
                     write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset, mmio_64bit_address);
                     config.mmio_64bit_base = mmio_64bit_address + bar_size;
                     continue;
                 }
+
                 dmesgln("PCI: Ran out of 32-bit MMIO address space");
                 VERIFY_NOT_REACHED();
+            } else if (bar_space_type == BARSpaceType::Memory64BitSpace) {
+                // 64-bit space
+                auto next_bar_value = read32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset + 4);
+                write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset, 0xFFFFFFFF);
+                write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset + 4, 0xFFFFFFFF);
+                u64 bar_size = read32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset);
+                bar_size |= (u64)read32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset + 4) << 32;
+                write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset, bar_value);
+                write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset + 4, next_bar_value);
+                bar_size &= bar_address_mask;
+                bar_size = (~bar_size) + 1;
+
+                if (bar_size == 0) {
+                    bar_offset += 4;
+                    continue;
+                }
+
+                auto mmio_64bit_address = align_up_to(config.mmio_64bit_base, bar_size);
+                if (bar_prefetchable && mmio_64bit_address + bar_size <= config.mmio_64bit_end) {
+                    write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset, mmio_64bit_address & 0xFFFFFFFF);
+                    write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset + 4, mmio_64bit_address >> 32);
+                    config.mmio_64bit_base = mmio_64bit_address + bar_size;
+                    bar_offset += 4;
+                    continue;
+                }
+
+                auto mmio_32bit_address = align_up_to(config.mmio_32bit_base, bar_size);
+                if (mmio_32bit_address + bar_size <= config.mmio_32bit_end) {
+                    write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset, mmio_32bit_address & 0xFFFFFFFF);
+                    write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset + 4, mmio_32bit_address >> 32);
+                    config.mmio_32bit_base = mmio_32bit_address + bar_size;
+                    bar_offset += 4;
+                    continue;
+                }
+
+                dmesgln("PCI: Ran out of 64-bit MMIO address space");
+                VERIFY_NOT_REACHED();
+            } else if (bar_space_type == BARSpaceType::IOSpace) {
+                write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset, 0xFFFFFFFF);
+                auto bar_size = read32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset);
+                write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset, bar_value);
+                bar_size &= bar_io_address_mask;
+                bar_size = (~bar_size) + 1;
+                if (bar_size == 0)
+                    continue;
+
+                auto io_address = align_up_to(config.io_base, bar_size);
+                if (io_address + bar_size <= config.io_end) {
+                    write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset, io_address);
+                    config.io_base = io_address + bar_size;
+                    continue;
+                }
+
+                dmesgln("PCI: Ran out of I/O address space");
+                VERIFY_NOT_REACHED();
             }
-            // 64-bit space
-            auto next_bar_value = read32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset + 4);
-            write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset, 0xFFFFFFFF);
-            write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset + 4, 0xFFFFFFFF);
-            u64 bar_size = read32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset);
-            bar_size |= (u64)read32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset + 4) << 32;
-            write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset, bar_value);
-            write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset + 4, next_bar_value);
-            bar_size &= bar_address_mask;
-            bar_size = (~bar_size) + 1;
-            if (bar_size == 0) {
-                bar_offset += 4;
-                continue;
-            }
-            auto mmio_64bit_address = align_up_to(config.mmio_64bit_base, bar_size);
-            if (bar_prefetchable && mmio_64bit_address + bar_size <= config.mmio_64bit_end) {
-                write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset, mmio_64bit_address & 0xFFFFFFFF);
-                write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset + 4, mmio_64bit_address >> 32);
-                config.mmio_64bit_base = mmio_64bit_address + bar_size;
-                bar_offset += 4;
-                continue;
-            }
-            auto mmio_32bit_address = align_up_to(config.mmio_32bit_base, bar_size);
-            if (mmio_32bit_address + bar_size <= config.mmio_32bit_end) {
-                write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset, mmio_32bit_address & 0xFFFFFFFF);
-                write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), bar_offset + 4, mmio_32bit_address >> 32);
-                config.mmio_32bit_base = mmio_32bit_address + bar_size;
-                bar_offset += 4;
-                continue;
-            }
-            dmesgln("PCI: Ran out of 64-bit MMIO address space");
-            VERIFY_NOT_REACHED();
         }
+
         // enable memory space
         auto command_value = read16_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::COMMAND);
         command_value |= 1 << 1; // memory space enable
         write16_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::COMMAND, command_value);
+
         // assign interrupt number
         auto interrupt_pin = read8_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::INTERRUPT_PIN);
-        auto masked_identifier = PCIInterruptSpecifier{
+        auto masked_identifier = PCIInterruptSpecifier {
             .interrupt_pin = interrupt_pin,
             .function = device_identifier.address().function(),
             .device = device_identifier.address().device(),
             .bus = device_identifier.address().bus()
         };
         masked_identifier &= config.interrupt_mask;
+
         auto interrupt_number = config.masked_interrupt_mapping.get(masked_identifier);
         if (interrupt_number.has_value())
             write8_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::INTERRUPT_LINE, interrupt_number.value());
@@ -319,19 +356,31 @@ void HostController::configure_attached_devices(PCIConfiguration& config)
             return;
         if (read8_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::SUBCLASS) != PCI::Bridge::SubclassID::PCI_TO_PCI)
             return;
+
         // bridge-specific handling
+        config.io_base = align_up_to(config.io_base, 4 * KiB);
+        write8_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::IO_BASE, config.io_base >> 8);
+        write16_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::IO_BASE_UPPER_16_BITS, config.io_base >> 16);
+
         config.mmio_32bit_base = align_up_to(config.mmio_32bit_base, MiB);
-        config.mmio_64bit_base = align_up_to(config.mmio_64bit_base, MiB);
         write16_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::MEMORY_BASE, config.mmio_32bit_base >> 16);
+
+        config.mmio_64bit_base = align_up_to(config.mmio_64bit_base, MiB);
         write16_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::PREFETCHABLE_MEMORY_BASE, config.mmio_64bit_base >> 16);
         write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::PREFETCHABLE_MEMORY_BASE_UPPER_32_BITS, config.mmio_64bit_base >> 32); },
+
         [this, &config](EnumerableDeviceIdentifier const& device_identifier) {
             // called after a bridge was recursively enumerated
+            write8_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::IO_LIMIT, config.io_base >> 8);
+            write16_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::IO_LIMIT_UPPER_16_BITS, config.io_base >> 16);
+
             config.mmio_32bit_base = align_up_to(config.mmio_32bit_base, MiB);
-            config.mmio_64bit_base = align_up_to(config.mmio_64bit_base, MiB);
             write16_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::MEMORY_LIMIT, config.mmio_32bit_base >> 16);
+
+            config.mmio_64bit_base = align_up_to(config.mmio_64bit_base, MiB);
             write16_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::PREFETCHABLE_MEMORY_LIMIT, config.mmio_64bit_base >> 16);
             write32_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::PREFETCHABLE_MEMORY_LIMIT_UPPER_32_BITS, config.mmio_64bit_base >> 32);
+
             // enable bridging
             auto command_value = read16_field(device_identifier.address().bus(), device_identifier.address().device(), device_identifier.address().function(), PCI::RegisterOffset::COMMAND);
             command_value |= 1 << 2; // enable forwarding of requests by the bridge
