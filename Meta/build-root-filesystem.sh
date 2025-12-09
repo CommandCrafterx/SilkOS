@@ -180,11 +180,11 @@ cp -r "$SERENITY_SOURCE_DIR"/Userland/Libraries/LibJS/Tests/test-common.js mnt/h
 cp -r "$SERENITY_SOURCE_DIR"/Userland/Applications/Spreadsheet/Tests mnt/home/anon/Tests/spreadsheet-tests
 
 if [ -n "$SERENITY_COPY_SOURCE" ] ; then
-  printf "\ncopying Serenity's source... "
-  rm -fr mnt/home/anon/Source/serenity
-  mkdir -p mnt/home/anon/Source/serenity
-  git clone --depth=1 file://"$SERENITY_SOURCE_DIR" mnt/home/anon/Source/serenity
-  rm -fr mnt/home/anon/Source/serenity/.git
+  printf "\ncopying SilkOS's source... "
+  rm -fr mnt/home/anon/Source/silkos
+  mkdir -p mnt/home/anon/Source/silkos
+  git clone --depth=1 file://"$SERENITY_SOURCE_DIR" mnt/home/anon/Source/silkos
+  rm -fr mnt/home/anon/Source/silkos/.git
 fi
 
 chmod 700 mnt/root

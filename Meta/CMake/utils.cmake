@@ -27,7 +27,7 @@ function(serenity_install_sources)
     file(GLOB_RECURSE sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.h" "*.cpp" "*.gml")
     foreach(source ${sources})
         get_filename_component(subdirectory ${source} DIRECTORY)
-        install(FILES ${source} DESTINATION usr/src/serenity/${current_source_dir_relative}/${subdirectory} OPTIONAL)
+        install(FILES ${source} DESTINATION usr/src/silkos/${current_source_dir_relative}/${subdirectory} OPTIONAL)
     endforeach()
 endfunction()
 

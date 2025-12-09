@@ -63,8 +63,8 @@ ByteString Project::to_absolute_path(ByteString const& path) const
 bool Project::project_is_serenity() const
 {
     // FIXME: Improve this heuristic
-    // Running "Meta/serenity.sh copy-src" installs the serenity repository at this path in the home directory
-    return m_root_path.ends_with("Source/serenity"sv);
+    // Running "Meta/serenity.sh copy-src" installs the SilkOS repository at this path in the home directory
+    return m_root_path.ends_with("Source/silkos"sv);
 }
 
 NonnullOwnPtr<ProjectConfig> Project::config() const
