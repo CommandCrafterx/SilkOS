@@ -335,7 +335,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     args_parser.add_positional_argument(path, "Path to ICC profile or to image containing ICC profile", "FILE", Core::ArgsParser::Required::No);
 
     StringView name;
-    args_parser.add_option(name, "Name of a built-in profile, such as 'sRGB', 'LAB'", "name", 'n', "NAME");
+    args_parser.add_option(name, "Name of a built-in profile, such as 'sRGB', 'LAB', 'XYZ'", "name", 'n', "NAME");
 
     StringView dump_out_path;
     args_parser.add_option(dump_out_path, "Dump unmodified ICC profile bytes to this path", "dump-to", 0, "FILE");
@@ -383,6 +383,16 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
                 return Gfx::ICC::IdentityLAB();
             if (name == "LAB_mft2")
                 return Gfx::ICC::IdentityLAB_mft2();
+            if (name == "LAB_mABmBA_no_clut")
+                return Gfx::ICC::IdentityLAB_mABmBA_no_clut();
+            if (name == "LAB_mABmBA_u8_clut")
+                return Gfx::ICC::IdentityLAB_mABmBA_u8_clut();
+            if (name == "LAB_mABmBA_u16_clut")
+                return Gfx::ICC::IdentityLAB_mABmBA_u16_clut();
+            if (name == "XYZ_mABmBA_no_clut")
+                return Gfx::ICC::IdentityXYZ_D50_mABmBA_no_clut();
+            if (name == "XYZ_mABmBA_u16_clut")
+                return Gfx::ICC::IdentityXYZ_D50_mABmBA_u16_clut();
             if (name == "sRGB")
                 return Gfx::ICC::sRGB();
             if (name == "XYZ")
