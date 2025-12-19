@@ -172,9 +172,6 @@ static ErrorOr<void> generic_region_encoding_procedure(GenericRegionEncodingInpu
     if (inputs.skip_pattern.has_value() && (inputs.skip_pattern->width() != width || inputs.skip_pattern->height() != height))
         return Error::from_string_literal("JBIG2Writer: Invalid USESKIP dimensions");
 
-    if (inputs.skip_pattern.has_value())
-        return Error::from_string_literal("JBIG2Writer: Cannot encode USESKIP yet");
-
     static constexpr auto get_pixel = [](BilevelImage const& buffer, int x, int y) -> bool {
         // 6.2.5.2 Coding order and edge conventions
         // "• All pixels lying outside the bounds of the actual bitmap have the value 0."
@@ -289,13 +286,16 @@ static ErrorOr<void> generic_region_encoding_procedure(GenericRegionEncodingInpu
     // " 2) Create a bitmap GBREG of width GBW and height GBH pixels."
     // auto result = TRY(BilevelImage::create(inputs.region_width, inputs.region_height));
 
+    // skip_pattern can only set when this is called for encoding halftone regions.
+    // Halftone regions never set is_typical_prediction_used.
+    VERIFY(!inputs.is_typical_prediction_used || !inputs.skip_pattern.has_value());
+
     // "3) Decode each row as follows:"
     for (size_t y = 0; y < height; ++y) {
         // "a) If all GBH rows have been decoded then the decoding is complete; proceed to step 4)."
         // "b) If TPGDON is 1, then decode a bit using the arithmetic entropy coder..."
         if (inputs.is_typical_prediction_used) {
             // "i) If the current row of GBREG is identical to the row immediately above, then SLTP = 1; otherwise SLTP = 0."
-            // FIXME: If skip_pattern is set, we should probably ignore skipped pixels here.
             bool is_line_identical_to_previous_line = true;
             for (size_t x = 0; x < width; ++x) {
                 if (inputs.image.get_bit(x, y) != get_pixel(inputs.image, (int)x, (int)y - 1)) {
@@ -2157,11 +2157,24 @@ static ErrorOr<void> encode_halftone_region(JBIG2::HalftoneRegionSegmentData con
     // FIXME: Add a halftone_region_encoding_procedure()? For now, it's just inlined here.
     u32 bits_per_pattern = ceil(log2(pattern_dictionary.gray_max + 1));
 
-    // FIXME: Implement support for enable_skip.
     Optional<BilevelImage const&> skip_pattern;
+    RefPtr<BilevelImage> skip_pattern_storage;
     bool const enable_skip = ((halftone_region.flags >> 3) & 1) != 0;
-    if (enable_skip)
-        return Error::from_string_literal("JBIG2Writer: Halftone region skip pattern not yet implemented");
+    if (enable_skip) {
+        skip_pattern_storage = TRY(JBIG2::halftone_skip_pattern({
+            halftone_region.region_segment_information.width,
+            halftone_region.region_segment_information.height,
+            halftone_region.grayscale_width,
+            halftone_region.grayscale_height,
+            halftone_region.grid_offset_x_times_256,
+            halftone_region.grid_offset_y_times_256,
+            halftone_region.grid_vector_x_times_256,
+            halftone_region.grid_vector_y_times_256,
+            pattern_dictionary.pattern_width,
+            pattern_dictionary.pattern_height,
+        }));
+        skip_pattern = *skip_pattern_storage;
+    }
 
     Vector<u64> grayscale_image = TRY(halftone_region.grayscale_image.visit(
         [](Vector<u64> const& grayscale_image) -> ErrorOr<Vector<u64>> {
