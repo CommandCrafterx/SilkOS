@@ -621,7 +621,7 @@ static ErrorOr<void> text_region_encoding_procedure(TextRegionEncodingInputParam
         if (inputs.size_of_symbol_instance_strips == 1)
             return {};
         if (inputs.uses_huffman_encoding)
-            return TRY(bit_stream->write_bits((u64)value, ceil(log2(inputs.size_of_symbol_instance_strips))));
+            return TRY(bit_stream->write_bits((u64)value, AK::ceil_log2(inputs.size_of_symbol_instance_strips)));
         return text_contexts->instance_t_integer_encoder.encode_non_oob(*encoder, value);
     };
 
@@ -1030,7 +1030,7 @@ static ErrorOr<ByteBuffer> symbol_dictionary_encoding_procedure(SymbolDictionary
 
         // 6.5.8.2.3 Setting SBSYMCODES and SBSYMCODELEN
         u32 number_of_symbols = inputs.input_symbols.size() + inputs.number_of_new_symbols; // "SBNUMSYMS" in spec.
-        u32 code_length = ceil(log2(number_of_symbols));                                    // "SBSYMCODELEN" in spec.
+        u32 code_length = AK::ceil_log2(number_of_symbols);                                 // "SBSYMCODELEN" in spec.
         JBIG2::HuffmanTable const* symbol_id_table { nullptr };
         if (inputs.uses_huffman_encoding) {
             if (!symbol_id_table_storage.has_value()) {
@@ -1968,7 +1968,7 @@ static ErrorOr<void> encode_text_region(JBIG2::TextRegionSegmentData const& text
     i8 delta_s_offset = AK::sign_extend(delta_s_offset_value, 5);
     u8 refinement_template = (text_region.flags >> 15) != 0;
 
-    u32 id_symbol_code_length = ceil(log2(symbols.size()));
+    u32 id_symbol_code_length = AK::ceil_log2(symbols.size());
 
     ByteBuffer symbol_id_huffman_decoding_table;
     Vector<JBIG2::Code> symbol_id_codes;
@@ -2155,7 +2155,7 @@ static ErrorOr<void> encode_halftone_region(JBIG2::HalftoneRegionSegmentData con
     auto const& pattern_dictionary = referred_to_segment.data.get<JBIG2::PatternDictionarySegmentData>();
 
     // FIXME: Add a halftone_region_encoding_procedure()? For now, it's just inlined here.
-    u32 bits_per_pattern = ceil(log2(pattern_dictionary.gray_max + 1));
+    u32 bits_per_pattern = AK::ceil_log2(pattern_dictionary.gray_max + 1);
 
     // "2) If HENABLESKIP equals 1, compute a bitmap HSKIP as shown in 6.6.5.1."
     Optional<BilevelImage const&> skip_pattern;

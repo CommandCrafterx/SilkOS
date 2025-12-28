@@ -197,7 +197,7 @@ struct JBIG2LoadingContext {
 
     // Files from the Power JBIG2 tests have a few quirks.
     // Since they're useful for coverage, detect these files and be more lenient.
-    bool is_power_jbig2_file { false };
+    bool allow_power_jbig2_quirks { false };
 };
 
 static ErrorOr<void> decode_jbig2_header(JBIG2LoadingContext& context, ReadonlyBytes data)
@@ -396,6 +396,9 @@ static ErrorOr<size_t> scan_for_immediate_generic_region_size(ReadonlyBytes data
 
 static void identify_power_jbig2_files(JBIG2LoadingContext& context)
 {
+    if (context.options.strictness == JBIG2DecoderOptions::Strictness::SpecCompliant)
+        return;
+
     for (auto const& segment : context.segments) {
         auto signature_data_1 = "\x20\0\0\0"
                                 "Source\0"
@@ -410,7 +413,7 @@ static void identify_power_jbig2_files(JBIG2LoadingContext& context)
                                 "1.0.0\0"
                                 "\0"sv;
         if (segment.type() == JBIG2::SegmentType::Extension && (segment.data == signature_data_1.bytes() || segment.data == signature_data_2.bytes())) {
-            context.is_power_jbig2_file = true;
+            context.allow_power_jbig2_quirks = true;
             return;
         }
     }
@@ -450,18 +453,29 @@ static ErrorOr<void> validate_segment_header_retention_flags(JBIG2LoadingContext
                 return Error::from_string_literal("JBIG2ImageDecoderPlugin: Invalid segment retention flags");
         }
 
-        for (auto const& [i, referred_to_segment_number] : enumerate(header.referred_to_segment_numbers)) {
-            // Quirk: t89-halftone/*-stripe.jb2 have one PatternDictionary and then one ImmediateHalftoneRegion per stripe,
-            // but each ImmediateHalftoneRegion (incorrectly?) sets the retention flag for the PatternDictionary to 0.
-            if (dead_segments.contains(referred_to_segment_number) && !context.is_power_jbig2_file)
+        for (auto const& [i, referred_to_segment] : enumerate(segment.referred_to_segments)) {
+            bool allow_reference_to_dead_segment_quirk = false;
+            if (context.allow_power_jbig2_quirks
+                && referred_to_segment->type() == JBIG2::SegmentType::PatternDictionary) {
+                // Quirk: t89-halftone/*-stripe.jb2 have one PatternDictionary and then one ImmediateHalftoneRegion per stripe,
+                // but each ImmediateHalftoneRegion (incorrectly?) sets the retention flag for the PatternDictionary to 0.
+                allow_reference_to_dead_segment_quirk = true;
+            }
+            if (context.options.strictness == JBIG2DecoderOptions::Strictness::Permissive
+                && referred_to_segment->type() == JBIG2::SegmentType::SymbolDictionary) {
+                // Quirk: jbig2enc (used e.g. by Google Books) sometimes generates SymbolDictionary segments that do not
+                // have their retention flag set, https://github.com/agl/jbig2enc/issues/121.
+                allow_reference_to_dead_segment_quirk = true;
+            }
+            if (dead_segments.contains(referred_to_segment->header.segment_number) && !allow_reference_to_dead_segment_quirk)
                 return Error::from_string_literal("JBIG2ImageDecoderPlugin: Segment refers to dead segment");
 
             auto const referred_to_segment_retention_flag = header.referred_to_segment_retention_flags[i];
             if (referred_to_segment_retention_flag) {
-                if (dead_segments.contains(referred_to_segment_number))
+                if (dead_segments.contains(referred_to_segment->header.segment_number))
                     return Error::from_string_literal("JBIG2ImageDecoderPlugin: Segment retention flags tried to revive dead segment");
             } else {
-                dead_segments.set(referred_to_segment_number);
+                dead_segments.set(referred_to_segment->header.segment_number);
             }
         }
     }
@@ -661,7 +675,7 @@ static ErrorOr<void> validate_segment_header_page_associations(JBIG2LoadingConte
                 return Error::from_string_literal("JBIG2ImageDecoderPlugin: Region, page information, end of page, or end of stripe segment with no page association");
         }
         // Quirk: `042_*.jb2`, `amb_*.jb2` in the Power JBIG2 test suite incorrectly (cf 7.3.2) associate EndOfFile with a page.
-        if (segment.type() == JBIG2::SegmentType::EndOfFile && segment.header.page_association != 0 && !context.is_power_jbig2_file)
+        if (segment.type() == JBIG2::SegmentType::EndOfFile && segment.header.page_association != 0 && !context.allow_power_jbig2_quirks)
             return Error::from_string_literal("JBIG2ImageDecoderPlugin: End of file segment with page association");
 
         // "If a segment is not associated with any page, then it must not refer to any segment that is associated with any page."
@@ -847,7 +861,7 @@ static ErrorOr<void> scan_for_page_size(JBIG2LoadingContext& context)
             continue;
 
         // Quirk: `042_*.jb2`, `amb_*.jb2` in the Power JBIG2 test suite incorrectly (cf 7.3.2) associate EndOfFile with a page.
-        if (segment.type() == JBIG2::SegmentType::EndOfFile && context.is_power_jbig2_file)
+        if (segment.type() == JBIG2::SegmentType::EndOfFile && context.allow_power_jbig2_quirks)
             continue;
 
         if (found_end_of_page)
@@ -1462,7 +1476,7 @@ static ErrorOr<NonnullRefPtr<BilevelImage>> text_region_decoding_procedure(TextR
         if (inputs.size_of_symbol_instance_strips == 1)
             return 0;
         if (inputs.uses_huffman_encoding)
-            return TRY(bit_stream->read_bits(ceil(log2(inputs.size_of_symbol_instance_strips))));
+            return TRY(bit_stream->read_bits(AK::ceil_log2(inputs.size_of_symbol_instance_strips)));
         return text_contexts->instance_t_integer_decoder.decode_non_oob(*decoder);
     };
 
@@ -1836,7 +1850,7 @@ static ErrorOr<Vector<BilevelSubImage>> symbol_dictionary_decoding_procedure(Sym
 
         // 6.5.8.2.3 Setting SBSYMCODES and SBSYMCODELEN
         u32 number_of_symbols = inputs.input_symbols.size() + inputs.number_of_new_symbols; // "SBNUMSYMS" in spec.
-        u32 code_length = ceil(log2(number_of_symbols));                                    // "SBSYMCODELEN" in spec.
+        u32 code_length = AK::ceil_log2(number_of_symbols);                                 // "SBSYMCODELEN" in spec.
         JBIG2::HuffmanTable const* symbol_id_table { nullptr };
         if (inputs.uses_huffman_encoding) {
             if (!symbol_id_table_storage.has_value()) {
@@ -2302,7 +2316,7 @@ static ErrorOr<NonnullRefPtr<BilevelImage>> halftone_region_decoding_procedure(H
     }
 
     // "3) Set HBPP to ⌈log2 (HNUMPATS)⌉."
-    u32 bits_per_pattern = ceil(log2(inputs.patterns.size()));
+    u32 bits_per_pattern = AK::ceil_log2(inputs.patterns.size());
 
     // "4) Decode an image GI of size HGW by HGH with HBPP bits per pixel using the gray-scale image decoding
     //     procedure as described in Annex C. Set the parameters to this decoding procedure as shown in Table 23.
@@ -2466,7 +2480,7 @@ static ErrorOr<void> decode_symbol_dictionary(JBIG2LoadingContext& context, Segm
     u8 refinement_template_used = (flags >> 12) & 1; // "SDREFTEMPLATE" in spec.
 
     // Quirk: 042_22.jb2 does not set SDREFAGG but it does set SDREFTEMPLATE.
-    if (!uses_refinement_or_aggregate_coding && refinement_template_used != 0 && !context.is_power_jbig2_file)
+    if (!uses_refinement_or_aggregate_coding && refinement_template_used != 0 && !context.allow_power_jbig2_quirks)
         return Error::from_string_literal("JBIG2ImageDecoderPlugin: Invalid refinement_template_used");
 
     if (flags & 0b1110'0000'0000'0000)
@@ -2683,7 +2697,7 @@ static ErrorOr<RegionResult> decode_text_region(JBIG2LoadingContext& context, Se
         u16 huffman_flags = TRY(stream.read_value<BigEndian<u16>>());
 
         // Quirk: 042_11.jb2 has refinement huffman table bits set but the SBREFINE bit is not set.
-        if (!uses_refinement_coding && (huffman_flags & 0x7fc0) != 0 && !context.is_power_jbig2_file)
+        if (!uses_refinement_coding && (huffman_flags & 0x7fc0) != 0 && !context.allow_power_jbig2_quirks)
             return Error::from_string_literal("JBIG2ImageDecoderPlugin: Huffman flags have refinement bits set but refinement bit is not set");
 
         huffman_tables = TRY(text_region_huffman_tables_from_flags(huffman_flags, custom_tables));
@@ -2792,7 +2806,7 @@ static ErrorOr<RegionResult> decode_text_region(JBIG2LoadingContext& context, Se
     // Done further up, since it's needed to decode the symbol ID Huffman table already.
 
     // "3) As described in E.3.7, reset all the arithmetic coding statistics to zero."
-    u32 id_symbol_code_length = ceil(log2(symbols.size()));
+    u32 id_symbol_code_length = AK::ceil_log2(symbols.size());
     Optional<TextContexts> text_contexts;
     if (!uses_huffman_encoding)
         text_contexts = TextContexts { id_symbol_code_length };
