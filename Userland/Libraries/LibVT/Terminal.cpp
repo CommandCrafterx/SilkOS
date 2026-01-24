@@ -545,8 +545,8 @@ void Terminal::CNL(Parameters params)
     if (params.size() >= 1 && params[0] != 0)
         num = params[0];
     unsigned new_row = cursor_row() + num;
-    if (new_row >= m_columns)
-        new_row = m_columns - 1;
+    if (new_row >= m_rows)
+        new_row = m_rows - 1;
     set_cursor(new_row, 0);
 }
 
@@ -577,8 +577,13 @@ void Terminal::REP(Parameters params)
     if (params.size() >= 1 && params[0] != 0)
         count = params[0];
 
-    for (unsigned i = 0; i < count; ++i)
-        put_character_at(m_current_state.cursor.row, m_current_state.cursor.column++, m_last_code_point);
+    count = min<unsigned>(count, columns() - cursor_column());
+
+    for (unsigned i = 0; i < count; ++i) {
+        put_character_at(m_current_state.cursor.row, m_current_state.cursor.column, m_last_code_point);
+        if (m_current_state.cursor.column < (size_t)columns() - 1)
+            m_current_state.cursor.column++;
+    }
 }
 
 void Terminal::VPA(Parameters params)
