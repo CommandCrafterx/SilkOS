@@ -5,9 +5,8 @@
  */
 
 #include <AK/StringView.h>
-#include <Kernel/Arch/x86_64/Firmware/PCBIOS/Mapper.h>
-#include <Kernel/Arch/x86_64/Firmware/PCBIOS/SysFSComponent.h>
 #include <Kernel/FileSystem/OpenFileDescription.h>
+#include <Kernel/Firmware/SMBIOS/SysFSComponent.h>
 #include <Kernel/Library/KBufferBuilder.h>
 #include <Kernel/Memory/MemoryManager.h>
 #include <Kernel/Memory/TypedMapping.h>
@@ -43,10 +42,10 @@ ErrorOr<size_t> SysFSPCBIOSComponent::read_bytes(off_t offset, size_t count, Use
 StringView SysFSPCBIOSComponent::name() const
 {
     switch (m_type) {
-    case Type::DMIEntryPoint:
-        return "smbios_entry_point"sv;
+    case Type::SMBIOSEntryPoint:
+        return "entry_point"sv;
     case Type::SMBIOSTable:
-        return "DMI"sv;
+        return "structure_table"sv;
     default:
         break;
     }
