@@ -332,7 +332,7 @@ ALWAYS_INLINE I round_to(double value)
 }
 
 #elif ARCH(AARCH64)
-template<Signed I>
+template<SignedIntegral I>
 ALWAYS_INLINE I round_to(float value)
 {
     if constexpr (sizeof(I) <= sizeof(u32)) {
@@ -349,7 +349,7 @@ ALWAYS_INLINE I round_to(float value)
     return static_cast<I>(res);
 }
 
-template<Signed I>
+template<SignedIntegral I>
 ALWAYS_INLINE I round_to(double value)
 {
     if constexpr (sizeof(I) <= sizeof(u32)) {
@@ -366,7 +366,7 @@ ALWAYS_INLINE I round_to(double value)
     return static_cast<I>(res);
 }
 
-template<Unsigned U>
+template<UnsignedIntegral U>
 ALWAYS_INLINE U round_to(float value)
 {
     if constexpr (sizeof(U) <= sizeof(u32)) {
@@ -383,7 +383,7 @@ ALWAYS_INLINE U round_to(float value)
     return static_cast<U>(res);
 }
 
-template<Unsigned U>
+template<UnsignedIntegral U>
 ALWAYS_INLINE U round_to(double value)
 {
     if constexpr (sizeof(U) <= sizeof(u32)) {
@@ -505,6 +505,9 @@ constexpr T fmod(T x, T y)
     }
 
     x_mantissa %= y_mantissa;
+
+    if (x_mantissa == 0)
+        return 0;
 
     // We're done and want to return x_mantissa * 2 ** x_exponent.
     // But x_mantissa might not have a leading 1 bit, so we have to realign first.
@@ -1221,7 +1224,7 @@ using Hyperbolic::sinh;
 using Hyperbolic::tanh;
 
 // Calculate x^y with fast exponentiation when the power is a natural number.
-template<FloatingPoint F, Unsigned U>
+template<FloatingPoint F, UnsignedIntegral U>
 constexpr F pow_int(F x, U y)
 {
     auto result = static_cast<F>(1);
