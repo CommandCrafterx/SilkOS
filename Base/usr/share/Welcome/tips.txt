@@ -1,4 +1,4 @@
-# SerenityOS Tips
+# SilkOS Tips
 # Did you know...
 Pressing Ctrl+Alt+Space at an insertion caret pops up the emoji picker.
 Middle clicking a window's maximize button extends that window vertically.
