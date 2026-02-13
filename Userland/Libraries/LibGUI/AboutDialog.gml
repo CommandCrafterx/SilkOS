@@ -58,10 +58,17 @@
             }
 
             @GUI::Label {
-                name: "copyright"
+                name: "copyright_silkos"
                 text_alignment: "CenterLeft"
                 fixed_height: 14
-                text: "Copyright © the SerenityOS developers, 2018-2026"
+                text: "Copyright © 2025-2026 CommandCrafterx"
+            }
+
+            @GUI::Label {
+                name: "copyright_serenity"
+                text_alignment: "CenterLeft"
+                fixed_height: 14
+                text: "Copyright © 2018-2026 the SerenityOS developers"
             }
 
             @GUI::Layout::Spacer {}
