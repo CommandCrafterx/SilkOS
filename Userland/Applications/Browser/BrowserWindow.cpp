@@ -62,7 +62,7 @@ BrowserWindow::BrowserWindow(WebView::CookieJar& cookie_jar, Vector<URL::URL> co
     restore_size_and_position("Browser"sv, "Window"sv, { { 730, 560 } });
     save_size_and_position_on_close("Browser"sv, "Window"sv);
     set_icon(app_icon.bitmap_for_size(16));
-    set_title("Browser");
+    set_title("Kori");
 
     auto widget = set_main_widget<GUI::Widget>();
     widget->load_from_gml(browser_window_gml).release_value_but_fixme_should_propagate_errors();
@@ -557,7 +557,7 @@ void BrowserWindow::set_window_title_for_tab(Tab const& tab)
 {
     auto& title = tab.title();
     auto url = tab.url();
-    set_title(ByteString::formatted("{} - Browser", title.is_empty() ? url.to_byte_string() : title));
+    set_title(ByteString::formatted("{} - Kori", title.is_empty() ? url.to_byte_string() : title));
 }
 
 Tab& BrowserWindow::create_new_tab(URL::URL const& url, Web::HTML::ActivateTab activate)
@@ -662,7 +662,7 @@ Tab& BrowserWindow::create_new_tab(URL::URL const& url, Web::HTML::ActivateTab a
 
 void BrowserWindow::create_new_window(URL::URL const& url)
 {
-    GUI::Process::spawn_or_show_error(this, "/bin/Browser"sv, Array { url.to_byte_string() });
+    GUI::Process::spawn_or_show_error(this, "/bin/Kori"sv, Array { url.to_byte_string() });
 }
 
 void BrowserWindow::content_filters_changed()

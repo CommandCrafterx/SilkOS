@@ -177,7 +177,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     TRY(Core::System::unveil("/etc/FileIconProvider.ini", "r"));
     TRY(Core::System::unveil("/sys/kernel/processes", "r"));
     TRY(Core::System::unveil("/bin/BrowserSettings", "x"));
-    TRY(Core::System::unveil("/bin/Browser", "x"));
+    TRY(Core::System::unveil("/bin/Kori", "x"));
     TRY(Core::System::unveil(nullptr, nullptr));
 
     TRY(Core::System::enter_jail_mode_until_exit());

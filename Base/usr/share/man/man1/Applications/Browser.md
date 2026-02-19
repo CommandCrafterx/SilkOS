@@ -1,6 +1,6 @@
 ## Name
 
-![Icon](/res/icons/16x16/app-browser.png) Browser - Serenity WWW Browser
+![Icon](/res/icons/16x16/app-browser.png) Kori - SilkOS Kori Web-Browser
 
 [Open](launch:///bin/Browser)
 
@@ -12,7 +12,7 @@ $ Browser [options] [urls]
 
 ## Description
 
-Browser is an application used to view the World Wide Web. It is built on top of Serenity's own `LibWeb` and `LibJS` engines, allowing it to render HTML, CSS, and JavaScript.
+Kori is an application used to view the World Wide Web. It is built on top of Serenity's own `LibWeb` and `LibJS` engines, allowing it to render HTML, CSS, and JavaScript.
 
 ## Options
 
@@ -26,8 +26,8 @@ Browser is an application used to view the World Wide Web. It is built on top of
 ## Examples
 
 ```**sh
-$ Browser
-$ Browser --help
-$ Browser https://silk-project.github.io/
-$ Browser https://silk-project.github.io/ /res/html/misc/welcome.html github.com/serenityos/serenity
+$ Kori
+$ Kori --help
+$ Kori https://silk-project.github.io/
+$ Kori https://silk-project.github.io/ /res/html/misc/welcome.html github.com/CommandCrafterx/SilkOS
 ```

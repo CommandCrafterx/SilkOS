@@ -1,8 +1,8 @@
 [App]
-Name=&Browser
-Executable=/bin/Browser
-Arguments=--new-window
+Name=Kori
+Executable=/bin/Kori
 Category=&Internet
+Icon=app-browser
 
 [Launcher]
 FileTypes=html,htm

@@ -1,7 +1,7 @@
 serenity_component(
     Browser
     RECOMMENDED
-    TARGETS Browser
+    TARGETS Kori
     DEPENDS BrowserSettings ImageDecoder RequestServer WebContent
 )
 
@@ -40,5 +40,7 @@ set(GENERATED_SOURCES
     TabGML.h
 )
 
-serenity_app(Browser ICON app-browser)
-target_link_libraries(Browser PRIVATE LibCore LibWebView LibWeb LibProtocol LibGUI LibDesktop LibConfig LibGfx LibIPC LibJS LibLocale LibMain LibSyntax LibURL)
+serenity_app(Kori ICON app-browser)
+target_link_libraries(Kori PRIVATE LibCore LibWebView LibWeb LibProtocol LibGUI LibDesktop LibConfig LibGfx LibIPC LibJS LibLocale LibMain LibSyntax LibURL)
+
+install(CODE "file(CREATE_LINK Kori ${CMAKE_INSTALL_PREFIX}/bin/Browser SYMBOLIC)")

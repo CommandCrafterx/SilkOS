@@ -25,7 +25,7 @@ namespace Web {
 #endif
 
 #if defined(AK_OS_SERENITY)
-#    define OS_STRING "SerenityOS"
+#    define OS_STRING "SilkOS"
 #elif defined(AK_OS_LINUX)
 #    define OS_STRING "Linux"
 #elif defined(AK_OS_MACOS)
@@ -58,7 +58,7 @@ enum class NavigatorCompatibilityMode {
     WebKit
 };
 
-#define BROWSER_NAME "Ladybird"
+#define BROWSER_NAME "Kori"
 #define BROWSER_VERSION "1.0"
 
 constexpr auto default_user_agent = "Mozilla/5.0 (" OS_STRING "; " CPU_STRING ") " BROWSER_NAME "/" BROWSER_VERSION ""sv;
