@@ -17,7 +17,7 @@ $ GMLPlayground [file]
 ## Description
 
 GML Playground facilitates development of graphical user interfaces (GUI)
-for Serenity applications using GUI Markup Language (GML) to compose
+for SilkOS applications using GUI Markup Language (GML) to compose
 a layout for GUI widgets and set widget attributes.
 
 The specified widgets are automatically rendered in a live preview

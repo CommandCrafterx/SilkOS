@@ -10,7 +10,7 @@ $ sql [--database database] [--read file] [--source file] [--no-sqlrc]
 
 ## Description
 
-This is a client for the SerenitySQL database server.
+This is a client for the SilkOSSQL database server.
 
 ## Options
 

@@ -12,7 +12,7 @@ void dbgputstr(char const* characters, size_t length);
 
 ## Description
 
-`dbgputstr` is Serenity's generic kernel-supported logging facility. Currently, logging submitted to `dbgputstr` is directly printed to the serial console.
+`dbgputstr` is SilkOS's generic kernel-supported logging facility. Currently, logging submitted to `dbgputstr` is directly printed to the serial console.
 
 `dbgputstr` takes as arguments a pointer to a string to be written, and the length of that string.
 

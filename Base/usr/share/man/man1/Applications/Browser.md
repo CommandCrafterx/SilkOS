@@ -12,7 +12,7 @@ $ Browser [options] [urls]
 
 ## Description
 
-Kori is an application used to view the World Wide Web. It is built on top of Serenity's own `LibWeb` and `LibJS` engines, allowing it to render HTML, CSS, and JavaScript.
+Kori is an application used to view the World Wide Web. It is built on top of Serenity's `LibWeb` and `LibJS` engines, allowing it to render HTML, CSS, and JavaScript.
 
 ## Options
 

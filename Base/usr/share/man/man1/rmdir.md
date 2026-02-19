@@ -25,8 +25,8 @@ Remove given `directory(ies)`, if they are empty
 
 ```sh
 # Try to remove non-empty directory
-$ mkdir serenity ; echo cool > serenity/cool.txt
-$ rmdir serenity
+$ mkdir silkos ; echo cool > silkos/cool.txt
+$ rmdir silkos
 rmdir: Directory not empty
 
 # Remove empty directory

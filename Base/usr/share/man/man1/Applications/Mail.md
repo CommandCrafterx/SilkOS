@@ -1,6 +1,6 @@
 ## Name
 
-![Icon](/res/icons/16x16/app-mail.png) Mail - Serenity e-mail client
+![Icon](/res/icons/16x16/app-mail.png) Mail - SilkOS e-mail client
 
 [Open](launch:///bin/Mail)
 
@@ -12,7 +12,7 @@ $ Mail
 
 ## Description
 
-Mail is an e-mail client for Serenity. It can connect to real e-mail servers.
+Mail is an e-mail client for SilkOS. It can connect to real e-mail servers.
 Currently, a configuration file is required. This must be stored in `~/.config/Mail.ini`
 See the Examples section for an example configuration file.
 

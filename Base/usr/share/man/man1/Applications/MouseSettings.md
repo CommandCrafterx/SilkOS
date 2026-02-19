@@ -18,6 +18,6 @@ Under the _Mouse_ tab, the user can set mouse cursor speed, scroll wheel step si
 
 The _Cursor Theme_ tab provides the user with drop-down list of available default cursor themes, Default and Dark.
 
-Supplemental cursors are available via the `serenity-theming` port. Some supplemental cursor themes are Durrque, Chillychilly, Jakande, Vanliga and Vanliga-Dark, among others.
+Supplemental cursors are available via the `silkos-theming` port. Some supplemental cursor themes are Durrque, Chillychilly, Jakande, Vanliga and Vanliga-Dark, among others.
 
 The _Cursor Highlight_ tab allows the user to change highlight color, opacity and size. The global keyboard shortcut to enable and disable cursor highlighting is Super+H.

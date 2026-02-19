@@ -31,7 +31,7 @@ The data contains code point (encoded as host-endian `u32`), width and height (a
 
 Implemented in `FontEditor::MainWidget::copy_selected_glyphs` and `FontEditor::MainWidget::paste_glyphs`, in [`Userland/Applications/FontEditor/MainWidget.cpp`](../../../../../Userland/Applications/FontEditor/MainWidget.cpp).
 
-## image/x-serenityos (Clipboard-only)
+## image/x-silkos (Clipboard-only)
 
 Requires the metadata-fields `width`, `height`, `scale`, `format` (see `Gfx::BitmapFormat`), and `pitch`, encoded as decimal strings.
 
@@ -47,7 +47,7 @@ Newline-delimited set of URIs. Used by File Manager, `FileSystemModel`, and Term
 Example:
 
 ```
-file:///home/anon/Desktop/Browser
+file:///home/anon/Desktop/Kori
 file:///home/anon/Desktop/Help
 file:///home/anon/Desktop/Home
 ```

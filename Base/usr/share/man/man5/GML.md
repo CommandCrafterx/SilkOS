@@ -4,7 +4,7 @@ GUI Markup Language (GML)
 
 ## Description
 
-GML is Serenity's graphic user interface (GUI) markup language. GML files are human-readable text files and have no easily detectable filemagic. The format is strongly influenced by QML, the Qt Modeling Language.
+GML is SilkOS's graphic user interface (GUI) markup language. GML files are human-readable text files and have no easily detectable filemagic. The format is strongly influenced by QML, the Qt Modeling Language.
 
 It allows you to easily define GUI interfaces for your applications. It is easy to learn and use in C++.
 

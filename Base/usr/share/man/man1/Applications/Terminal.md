@@ -1,6 +1,6 @@
 ## Name
 
-![Icon](/res/icons/16x16/app-terminal.png) Terminal - Serenity terminal emulator
+![Icon](/res/icons/16x16/app-terminal.png) Terminal - SilkOS terminal emulator
 
 [Open](launch:///bin/Terminal)
 
@@ -12,7 +12,7 @@ $ Terminal [options]
 
 ## Description
 
-Terminal is a terminal emulator application for Serenity.
+Terminal is a terminal emulator application for SilkOS.
 
 It can be launched from the System Menu or the quick access icon to its right, via the `Open in Terminal` action in File Manager and on the Desktop. You can also click on the `Open` link above to launch Terminal.
 

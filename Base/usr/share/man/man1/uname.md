@@ -26,7 +26,7 @@ system call.
 
 ```sh
 $ uname -sm
-Serenity x86_64
+SilkOS x86_64
 ```
 
 ## See also

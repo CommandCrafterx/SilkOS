@@ -1,6 +1,6 @@
 ## Name
 
-WebServer - Serenity web server
+WebServer - SilkOS web server
 
 ## Synopsis
 

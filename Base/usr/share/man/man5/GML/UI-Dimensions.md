@@ -4,7 +4,7 @@ UI Dimensions
 
 # Description
 
-UI Dimension (or [GUI::UIDimension](file:///usr/src/serenity/Userland/Libraries/LibGUI/UIDimensions.h) in c++) is a special, union — of positive integer and enum — like, type that is used to represent dimensions in a user interface context.
+UI Dimension (or [GUI::UIDimension](file:///usr/src/silkos/Userland/Libraries/LibGUI/UIDimensions.h) in c++) is a special, union — of positive integer and enum — like, type that is used to represent dimensions in a user interface context.
 
 It can either store positive integers ≥0 or special meaning values from a pre determined set.
 

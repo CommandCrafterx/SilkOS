@@ -1,6 +1,6 @@
 ## Name
 
-![Icon](/res/icons/16x16/app-profiler.png) Profiler - Serenity process profiler
+![Icon](/res/icons/16x16/app-profiler.png) Profiler - SilkOS process profiler
 
 [Open](launch:///bin/Profiler)
 

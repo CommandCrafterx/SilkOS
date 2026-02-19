@@ -21,5 +21,5 @@ Slugify is a simple text to slug transform utility and prints the result.
 ## Examples
 
 ```sh
-$ slugify 'Serenity is a cool ### PROject123.'
+$ slugify 'SilkOS is a cool ### PROject123.'
 ```

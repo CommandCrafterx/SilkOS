@@ -1,6 +1,6 @@
 ## Name
 
-![Icon](/res/icons/16x16/app-assistant.png) Assistant - Serenity Assistant
+![Icon](/res/icons/16x16/app-assistant.png) Assistant - SilkOS Assistant
 
 [Open](launch:///bin/Assistant)
 
@@ -16,7 +16,7 @@ $ Assistant
 
 ### Features
 
--   Enter a URL to open it in [Browser](help://man/1/Applications/Browser), e.g. `serenityos.org`.
+-   Enter a URL to open it in [Browser](help://man/1/Applications/Browser), e.g. `silk-project.github.io`.
 -   Perform quick calculations by typing the equal sign (=) followed by a mathematical expression, e.g. `=22*101`. Press `Return` to copy the result.
 -   Run commands in [Terminal](help://man/1/Applications/Terminal) by prefixing them with a dollar sign (\$), e.g. `$ uname -a`.
 -   Launch applications with arguments, e.g. launch [Pixel Paint](help://man/1/Applications/PixelPaint) with a file: `pp image.png`.

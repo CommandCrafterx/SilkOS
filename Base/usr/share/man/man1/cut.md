@@ -43,7 +43,7 @@ $ cut example.txt -d ':' -f 1,3
 535:3476	Sales	11
 
 # Display bytes at given position
-$ echo "serenity is cool" | cut -b 5
+$ echo "SilkOS is cool" | cut -b 5
 n
 
 ```

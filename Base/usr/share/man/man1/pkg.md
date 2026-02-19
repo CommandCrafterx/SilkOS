@@ -28,6 +28,6 @@ It does not currently support installing and uninstalling packages. To install t
 ## Example
 
 ```sh
-# Query the ports database for the serenity-theming package
-$ pkg -q serenity-theming
+# Query the ports database for the silkos-theming package
+$ pkg -q silkos-theming
 ```

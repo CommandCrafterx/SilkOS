@@ -4,7 +4,7 @@ Mitigations - Security mitigations implemented by SilkOS
 
 ## Description
 
-The SilkOS developers have put substantial effort into
+The SerenityOS developers have put substantial effort into
 integrating various mitigation technologies into the system
 in order to enhance its security. The goal of this document is
 to collect and describe the mitigations in one centralized place.

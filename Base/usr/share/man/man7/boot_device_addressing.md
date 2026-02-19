@@ -4,7 +4,7 @@ Boot Device Addressing - addressing the correct boot device to use.
 
 ## Synopsis
 
-Serenity's kernel can select the boot device at boot time, based on the `root` boot parameter.
+SilkOS's kernel can select the boot device at boot time, based on the `root` boot parameter.
 This functionality is used to control which boot device is selected to be used for all further boot process operations.
 
 ## Description

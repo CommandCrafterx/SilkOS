@@ -19,6 +19,6 @@ Moving into any edge will teleport Snake to the opposite edge.
 
 Press `Spacebar` to pause and unpause the game.
 
-Customize Snake's default color or change its appearance with one of the included skins in the `Game` menu. Bonus skins are available in the [Serenity Theming Port](https://github.com/SerenityOS/theming).
+Customize Snake's default color or change its appearance with one of the included skins in the `Game` menu. Bonus skins are available in the [SilkOS Theming Port](https://github.com/CommandCrafterx/silkos-theming).
 
 Trivia: the food is what snakes actually eat. The glyphs are from the [SerenityOS Emoji font](https://emoji.serenityos.org).

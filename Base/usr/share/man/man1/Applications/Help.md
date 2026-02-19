@@ -15,7 +15,7 @@ $ Help file
 
 ## Description
 
-`Help` is Serenity's digital manual, the GUI counterpart to `man`.
+`Help` is SilkOS's digital manual, the GUI counterpart to `man`.
 It lets you search for and read manual pages (or "man pages").
 
 ## Examples

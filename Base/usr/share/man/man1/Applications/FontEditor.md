@@ -1,6 +1,6 @@
 ## Name
 
-![Icon](/res/icons/16x16/app-font-editor.png) FontEditor - Serenity font editor
+![Icon](/res/icons/16x16/app-font-editor.png) FontEditor - SilkOS font editor
 
 [Open](launch:///bin/FontEditor)
 
@@ -119,4 +119,4 @@ Figure above depicts a search session on the [fonts.serenityos.net](https://font
 
 The same search session displaying result of the previous query.
 
-So there you have it, by now you have at least an idea of how to make **_SerenityOS_** fonts using **FontEditor**. For any font-related questions or inquiries, just drop by the official [SerenityOS Discord #fonts](https://discord.com/channels/830522505605283862/927893781968191508).
+So there you have it, by now you have at least an idea of how to make **_SilkOS_** fonts using **FontEditor**. For any font-related questions or inquiries, just drop by the official [SerenityOS Discord #fonts](https://discord.com/channels/830522505605283862/927893781968191508).

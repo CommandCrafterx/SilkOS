@@ -78,4 +78,4 @@ All other characters are treated normally.
 ## See Also
 
 -   [`more`(1)](help://man/1/more) For a simpler pager that less implements.
--   [`man`(1)](help://man/1/man) For serenity's manual pager, that uses less.
+-   [`man`(1)](help://man/1/man) For SilkOS's manual pager, that uses less.

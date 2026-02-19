@@ -19,4 +19,4 @@ If you want more information on the structure of the manual system, take a look 
 
 ---
 
-Thank you for using **_SerenityOS Help!_**
+Thank you for using **_SilkOS Help!_**

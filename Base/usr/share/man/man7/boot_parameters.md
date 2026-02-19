@@ -4,7 +4,7 @@ Boot Parameters - optional parameters accepted by the kernel
 
 ## Description
 
-Serenity's kernel can process parameters at boot time.
+SilkOS's kernel can process parameters at boot time.
 This functionality is used to control or augment the state of features during the initial
 startup of the system.
 
