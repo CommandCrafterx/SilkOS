@@ -1,4 +1,6 @@
 # SilkOS
+![Static Badge](https://img.shields.io/badge/License-BSD_2.0_Clause-red)
+![Commit Activity](https://img.shields.io/github/commit-activity/m/CommandCrafterx/SilkOS)
 # 🚧 Under Construction 🚧
 
 ## SerenityOS Authors
