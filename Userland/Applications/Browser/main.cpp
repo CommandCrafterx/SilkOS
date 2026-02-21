@@ -190,7 +190,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
 
     Web::ResourceLoader::initialize(TRY(WebView::RequestServerAdapter::try_create()));
 
-    auto app_icon = GUI::Icon::default_icon("app-browser"sv);
+    auto app_icon = GUI::Icon::default_icon("app-kori"sv);
 
     Browser::g_home_url = Config::read_string("Browser"sv, "Preferences"sv, "Home"sv, Browser::default_homepage_url);
     Browser::g_new_tab_url = Config::read_string("Browser"sv, "Preferences"sv, "NewTab"sv, Browser::default_new_tab_url);

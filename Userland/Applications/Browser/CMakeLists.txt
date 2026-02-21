@@ -40,7 +40,7 @@ set(GENERATED_SOURCES
     TabGML.h
 )
 
-serenity_app(Kori ICON app-browser)
+serenity_app(Kori ICON app-kori)
 target_link_libraries(Kori PRIVATE LibCore LibWebView LibWeb LibProtocol LibGUI LibDesktop LibConfig LibGfx LibIPC LibJS LibLocale LibMain LibSyntax LibURL)
 
 install(CODE "file(CREATE_LINK Kori ${CMAKE_INSTALL_PREFIX}/bin/Browser SYMBOLIC)")

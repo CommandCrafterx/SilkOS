@@ -226,7 +226,7 @@ fonts = [
 ]
 
 icons_16x16 = [
-  "//Base/res/icons/16x16/app-browser.png",
+  "//Base/res/icons/16x16/app-kori.png",
   "//Base/res/icons/16x16/app-system-monitor.png",
   "//Base/res/icons/16x16/audio-volume-high.png",
   "//Base/res/icons/16x16/audio-volume-muted.png",
@@ -259,7 +259,7 @@ icons_16x16 = [
 ]
 
 icons_32x32 = [
-  "//Base/res/icons/32x32/app-browser.png",
+  "//Base/res/icons/32x32/app-kori.png",
   "//Base/res/icons/32x32/app-system-monitor.png",
   "//Base/res/icons/32x32/filetype-folder.png",
   "//Base/res/icons/32x32/filetype-unknown.png",

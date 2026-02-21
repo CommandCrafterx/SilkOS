@@ -120,7 +120,7 @@ class URLResult final : public Result {
 public:
     explicit URLResult(const URL::URL& url)
         : Result(url.to_byte_string(), "Open URL in Browser"_string, 50)
-        , m_bitmap(GUI::Icon::default_icon("app-browser"sv).bitmap_for_size(16))
+        , m_bitmap(GUI::Icon::default_icon("app-kori"sv).bitmap_for_size(16))
     {
     }
     ~URLResult() override = default;

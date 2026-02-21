@@ -17,7 +17,7 @@ set(FONTS
 list(TRANSFORM FONTS PREPEND "${SERENITY_SOURCE_DIR}/Base/res/fonts/")
 
 set(16x16_ICONS
-    app-browser.png
+    app-kori.png
     app-system-monitor.png
     box.png
     audio-volume-high.png
@@ -50,7 +50,7 @@ set(16x16_ICONS
     zoom-reset.png
 )
 set(32x32_ICONS
-    app-browser.png
+    app-kori.png
     app-system-monitor.png
     filetype-folder.png
     filetype-unknown.png

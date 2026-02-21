@@ -1,6 +1,6 @@
 ## Name
 
-![Icon](/res/icons/16x16/app-browser.png) Kori - SilkOS Kori Web-Browser
+![Icon](/res/icons/16x16/app-kori.png) Kori - SilkOS Kori Web-Browser
 
 [Open](launch:///bin/Browser)
 

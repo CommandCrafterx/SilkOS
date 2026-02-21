@@ -18,5 +18,5 @@ set(SOURCES
     main.cpp
 )
 
-serenity_app(BrowserSettings ICON app-browser)
+serenity_app(BrowserSettings ICON app-kori)
 target_link_libraries(BrowserSettings PRIVATE LibCore LibGfx LibGUI LibConfig LibMain LibWebView LibURL)

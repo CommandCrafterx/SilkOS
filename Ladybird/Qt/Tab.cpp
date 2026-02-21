@@ -43,7 +43,7 @@ namespace Ladybird {
 
 static QIcon default_favicon()
 {
-    static QIcon icon = load_icon_from_uri("resource://icons/16x16/app-browser.png"sv);
+    static QIcon icon = load_icon_from_uri("resource://icons/16x16/app-kori.png"sv);
     return icon;
 }
 

@@ -2,7 +2,7 @@
 Name=Kori
 Executable=/bin/Kori
 Category=&Internet
-Icon=app-browser
+Icon=app-kori
 
 [Launcher]
 FileTypes=html,htm
