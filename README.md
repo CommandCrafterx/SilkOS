@@ -1,5 +1,7 @@
 # SilkOS
 ![Static Badge](https://img.shields.io/badge/License-BSD_2.0_Clause-red)
+![GitHub Repo stars](https://img.shields.io/github/stars/CommandCrafterx/SilkOS?style=flat&logo=apachespark&logoColor=white&label=Stars&color=f5cc02)
+![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/Commandcrafterx/SilkOS?logo=target&logoColor=white)
 ![Commit Activity](https://img.shields.io/github/commit-activity/m/CommandCrafterx/SilkOS)
 # 🚧 Under Construction 🚧
 
