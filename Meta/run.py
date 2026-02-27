@@ -320,7 +320,7 @@ def determine_serenity_arch() -> Arch:
         return Arch.RISCV64
     if arch == "x86_64":
         return Arch.x86_64
-    raise RunError("Please specify a valid SerenityOS architecture")
+    raise RunError("Please specify a valid SilkOS architecture")
 
 
 def determine_machine_type() -> MachineType:
@@ -329,7 +329,7 @@ def determine_machine_type() -> MachineType:
         try:
             value = MachineType(provided_machine_type)
         except ValueError:
-            raise RunError(f"{provided_machine_type} is not a valid SerenityOS machine type")
+            raise RunError(f"{provided_machine_type} is not a valid SilkOS machine type")
         return value
     return MachineType.Default
 
@@ -340,7 +340,7 @@ def determine_boot_drive_type() -> BootDriveType:
         try:
             value = BootDriveType(provided_boot_drive_type)
         except ValueError:
-            raise RunError(f"{provided_boot_drive_type} is not a valid SerenityOS boot drive type")
+            raise RunError(f"{provided_boot_drive_type} is not a valid SilkOS boot drive type")
         return value
     return BootDriveType.NVMe
 
@@ -751,7 +751,7 @@ def set_up_machine_devices(config: Configuration):
     if config.qemu_kind != QEMUKind.NativeWindows:
         config.extra_arguments.extend(["-qmp", "unix:qmp-sock,server,nowait"])
 
-    config.extra_arguments.extend(["-name", "SerenityOS", "-d", "guest_errors"])
+    config.extra_arguments.extend(["-name", "SilkOS", "-d", "guest_errors"])
 
     # Machine/Architecture specifics.
     if config.machine_type.is_raspberry_pi():
