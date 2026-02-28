@@ -1,10 +1,10 @@
-# Ports for SerenityOS
+# Ports for SilkOS
 
 ## What's this?
 
-Serenity has software patched to run on it.
+SilkOS has software patched to run on it.
 These shell scripts will allow you to build that sort of software, easily.
-Note that you must have already built Serenity, and be in a Serenity build
+Note that you must have already built SilkOS, and be in a SilkOS build
 environment.
 
 ## Available ports
