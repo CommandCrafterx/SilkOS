@@ -170,6 +170,7 @@ set(KERNEL_SOURCES
     FileSystem/Mount.cpp
     FileSystem/MountFile.cpp
     FileSystem/OpenFileDescription.cpp
+    FileSystem/UnsharedResourceFile.cpp
     FileSystem/Plan9FS/FileSystem.cpp
     FileSystem/Plan9FS/Inode.cpp
     FileSystem/Plan9FS/Message.cpp
@@ -709,15 +710,14 @@ add_compile_options(-nostdlib)
 # information disclosures coming from the kernel stack.
 add_compile_options(-ftrivial-auto-var-init=pattern)
 
+# Zero any registers used within a function on return (to reduce data lifetime and ROP gadgets).
+# This is not implemented for RISC-V on Clang.
+if (NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND "${SERENITY_ARCH}" STREQUAL "riscv64"))
+    add_compile_options(-fzero-call-used-regs=used-gpr)
+endif()
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    # Apply any flags that are only available on >= GCC 11.1
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "11.1")
-        # Zero any registers used within a function on return (to reduce data lifetime and ROP gadgets).
-        add_compile_options(-fzero-call-used-regs=used-gpr)
-    endif()
-
     set(TARGET_STRING "")
-
 
     # Prevent naively implemented string functions (like strlen) from being "optimized" into a call to themselves.
     set_source_files_properties(Library/MiniStdLib.cpp
