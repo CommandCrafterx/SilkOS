@@ -10,10 +10,34 @@
 #include <LibCore/Forward.h>
 #include <LibSSH/KeyExchangeData.h>
 #include <LibSSH/Peer.h>
+#include <LibSSH/Session.h>
 
 namespace SSH::Server {
 
 class TCPClient;
+
+struct GenericMessage {
+    AK_MAKE_NONCOPYABLE(GenericMessage);
+
+public:
+    explicit GenericMessage(ByteBuffer&& data)
+        : data(move(data))
+        , payload(this->data.bytes())
+        , type(MUST(payload.read_value<MessageID>()))
+    {
+    }
+    GenericMessage(GenericMessage&& other)
+        : data(move(other.data))
+        , payload(data.bytes())
+        , type(other.type)
+    {
+        MUST(payload.discard(other.payload.offset()));
+    }
+
+    ByteBuffer data;
+    FixedMemoryStream payload;
+    MessageID type {};
+};
 
 class SSHClient : public Peer {
 public:
@@ -32,6 +56,8 @@ private:
         WaitingForKeyExchange,
         WaitingForNewKeysMessage,
         KeyExchanged,
+        WaitingForUserAuthentication,
+        Authentified,
     };
 
     ErrorOr<void> handle_protocol_version(ByteBuffer& data);
@@ -42,10 +68,30 @@ private:
     ErrorOr<void> handle_key_exchange(ByteBuffer& data);
     ErrorOr<void> send_ecdh_reply(ByteBuffer&& client_public_key);
 
+    ErrorOr<GenericMessage> unpack_generic_message(ByteBuffer& data);
+
+    ErrorOr<void> handle_service_request(GenericMessage data);
+    ErrorOr<void> send_service_accept(StringView);
+
+    ErrorOr<void> handle_user_authentication(GenericMessage data);
+    ErrorOr<void> send_user_authentication_success();
+
+    ErrorOr<void> handle_generic_packet(GenericMessage&&);
+
+    ErrorOr<void> handle_channel_open_message(GenericMessage&);
+    ErrorOr<void> send_channel_open_confirmation(Session const&);
+    ErrorOr<void> handle_channel_request(GenericMessage&);
+    ErrorOr<void> send_channel_success_message(Session const&);
+    ErrorOr<void> send_channel_data(Session const&, ByteBuffer const&);
+    ErrorOr<void> send_channel_close(Session const&);
+    ErrorOr<Session*> find_session(u32 sender_channel_id);
+
     State m_state { State::Constructed };
     Core::TCPSocket& m_tcp_socket;
 
     KeyExchangeData m_key_exchange_data {};
+
+    Vector<Session> m_sessions;
 };
 
 } // SSHServer
