@@ -76,15 +76,19 @@ FloatT copysign(FloatT x, FloatT y)
     return ex.to_float();
 }
 
-#define CONSTEXPR_STATE(function, args...)        \
-    if (is_constant_evaluated()) {                \
-        if (IsSame<T, long double>)               \
+#define CALL_BUILTIN(function, args...)           \
+    do {                                          \
+        if constexpr (IsSame<T, long double>)     \
             return __builtin_##function##l(args); \
-        if (IsSame<T, double>)                    \
+        if constexpr (IsSame<T, double>)          \
             return __builtin_##function(args);    \
-        if (IsSame<T, float>)                     \
+        if constexpr (IsSame<T, float>)           \
             return __builtin_##function##f(args); \
-    }
+    } while (0)
+
+#define CONSTEXPR_STATE(function, args...) \
+    if (is_constant_evaluated())           \
+        CALL_BUILTIN(function, args);
 
 #define AARCH64_INSTRUCTION(instruction, arg) \
     if constexpr (IsSame<T, long double>)     \
@@ -108,12 +112,7 @@ template<FloatingPoint T>
 constexpr T fabs(T x)
 {
     // Both GCC and Clang inline fabs by default, so this is just a cmath like wrapper
-    if constexpr (IsSame<T, long double>)
-        return __builtin_fabsl(x);
-    if constexpr (IsSame<T, double>)
-        return __builtin_fabs(x);
-    if constexpr (IsSame<T, float>)
-        return __builtin_fabsf(x);
+    CALL_BUILTIN(fabs, x);
 }
 
 namespace Rounding {
@@ -131,12 +130,7 @@ constexpr T ceil(T num)
 #if ARCH(AARCH64)
     AARCH64_INSTRUCTION(frintp, num);
 #else
-    if constexpr (IsSame<T, long double>)
-        return __builtin_ceill(num);
-    if constexpr (IsSame<T, double>)
-        return __builtin_ceil(num);
-    if constexpr (IsSame<T, float>)
-        return __builtin_ceilf(num);
+    CALL_BUILTIN(ceil, num);
 #endif
 }
 
@@ -154,12 +148,7 @@ constexpr T floor(T num)
 #if ARCH(AARCH64)
     AARCH64_INSTRUCTION(frintm, num);
 #else
-    if constexpr (IsSame<T, long double>)
-        return __builtin_floorl(num);
-    if constexpr (IsSame<T, double>)
-        return __builtin_floor(num);
-    if constexpr (IsSame<T, float>)
-        return __builtin_floorf(num);
+    CALL_BUILTIN(floor, num);
 #endif
 }
 
@@ -527,12 +516,7 @@ constexpr T fmod(T x, T y)
     x_bits.mantissa = x_mantissa;
     return x_bits.to_float();
 #    else
-    if constexpr (IsSame<T, long double>)
-        return __builtin_fmodl(x, y);
-    if constexpr (IsSame<T, double>)
-        return __builtin_fmod(x, y);
-    if constexpr (IsSame<T, float>)
-        return __builtin_fmodf(x, y);
+    CALL_BUILTIN(fmod, x, y);
 #    endif
 #endif
 }
@@ -557,12 +541,7 @@ constexpr T remainder(T x, T y)
     // TODO: Add implementation for this function.
     TODO();
 #    endif
-    if constexpr (IsSame<T, long double>)
-        return __builtin_remainderl(x, y);
-    if constexpr (IsSame<T, double>)
-        return __builtin_remainder(x, y);
-    if constexpr (IsSame<T, float>)
-        return __builtin_remainderf(x, y);
+    CALL_BUILTIN(remainder, x, y);
 #endif
 }
 }
@@ -619,7 +598,7 @@ constexpr T sqrt(T x)
     // TODO: Add implementation for this function.
     TODO();
 #    endif
-    return __builtin_sqrt(x);
+    CALL_BUILTIN(sqrt, x);
 #endif
 }
 
@@ -727,7 +706,7 @@ constexpr T sin(T angle)
     T angle_squared = angle * angle;
     return sign * (angle + angle * angle_squared * f(angle_squared));
 #    else
-    return __builtin_sin(angle);
+    CALL_BUILTIN(sin, angle);
 #    endif
 #endif
 }
@@ -790,7 +769,7 @@ constexpr T cos(T angle)
     T angle_squared = angle * angle;
     return sign * (1 + angle_squared * f(angle_squared));
 #    else
-    return __builtin_cos(angle);
+    CALL_BUILTIN(cos, angle);
 #    endif
 #endif
 }
@@ -831,7 +810,7 @@ constexpr T tan(T angle)
 #    if defined(AK_OS_SERENITY)
     return sin(angle) / cos(angle);
 #    else
-    return __builtin_tan(angle);
+    CALL_BUILTIN(tan, angle);
 #    endif
 #endif
 }
@@ -899,9 +878,52 @@ constexpr T atan(T value)
     return ret;
 #else
 #    if defined(AK_OS_SERENITY)
-    return asin(value / sqrt(1 + value * value));
+    if (value < 0)
+        return -atan(-value);
+
+    if (value > 1)
+        return Pi<T> / 2 - atan(1 / value);
+
+    // atan is an odd function a leading factor of 1, so this uses the same substitutions as sin().
+    // See there for a description.
+    auto f = [](T x) {
+        if constexpr (IsSame<T, f32>) {
+            // lolremez --float --degree 7 --range "1e-50:1" "(atan(sqrt(x))-sqrt(x))/(x*sqrt(x))" "1/(x*sqrt(x))"
+            // "Estimated max error: 7.351572e-9"
+            float u = 0.0026222446f;
+            u = u * x + -0.015132537f;
+            u = u * x + 0.041121863f;
+            u = u * x + -0.073667064f;
+            u = u * x + 0.10573932f;
+            u = u * x + -0.14185975f;
+            u = u * x + 0.19990396f;
+            return u * x + -0.33332986f;
+        } else {
+            // FIXME: Could do something custom for long double.
+            // lolremez --degree 15 --range "1e-50:1" "(atan(sqrt(x))-sqrt(x))/(x*sqrt(x))" "1/(x*sqrt(x))"
+            // "Estimated max error: 2.695747111292741e-15"
+            T u = 6.4855700791782353e-05;
+            u = u * x + -0.00062980993515420608;
+            u = u * x + 0.0028877745234626882;
+            u = u * x + -0.0083913659122280861;
+            u = u * x + 0.01759373283992496;
+            u = u * x + -0.028943865588822337;
+            u = u * x + 0.04001711781175539;
+            u = u * x + -0.049493567473208426;
+            u = u * x + 0.05782092815821073;
+            u = u * x + -0.066423996784058609;
+            u = u * x + 0.076879768543915233;
+            u = u * x + -0.090903598304650779;
+            u = u * x + 0.11111064186237864;
+            u = u * x + -0.14285711801574916;
+            u = u * x + 0.19999999929660117;
+            return u * x + -0.33333333332571796;
+        }
+    };
+    T squared = value * value;
+    return value + value * squared * f(squared);
 #    endif
-    return __builtin_atan(value);
+    CALL_BUILTIN(atan, value);
 #endif
 }
 
@@ -979,7 +1001,7 @@ constexpr T atan2(T y, T x)
     // y < 0 && x > 0
     return atan(y / x);
 #    else
-    return __builtin_atan2(y, x);
+    CALL_BUILTIN(atan2, y, x);
 #    endif
 #endif
 }
@@ -1098,7 +1120,7 @@ constexpr T log(T x)
     // FIXME: Adjust the polynomial and formula in log2 to fit this
     return log2<T>(x) / L2_E<T>;
 #else
-    return __builtin_log(x);
+    CALL_BUILTIN(log, x);
 #endif
 }
 
@@ -1120,7 +1142,7 @@ constexpr T log10(T x)
     // FIXME: Adjust the polynomial and formula in log2 to fit this
     return log2<T>(x) / L2_10<T>;
 #else
-    return __builtin_log10(x);
+    CALL_BUILTIN(log10, x);
 #endif
 }
 
@@ -1350,6 +1372,7 @@ constexpr T wrap_to_range(T a, IdentityType<T> b)
     return fmod(fmod(a + b, 2 * b) + 2 * b, 2 * b) - b;
 }
 
+#undef CALL_BUILTIN
 #undef CONSTEXPR_STATE
 #undef AARCH64_INSTRUCTION
 }

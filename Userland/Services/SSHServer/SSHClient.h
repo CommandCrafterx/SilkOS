@@ -47,7 +47,12 @@ public:
     {
     }
 
-    ErrorOr<void> handle_data(ByteBuffer& data);
+    enum class ShouldDisconnect : u8 {
+        No,
+        Yes,
+    };
+
+    ErrorOr<ShouldDisconnect> handle_data(ByteBuffer& data);
 
 private:
     enum class State : u8 {
@@ -76,14 +81,16 @@ private:
     ErrorOr<void> handle_user_authentication(GenericMessage data);
     ErrorOr<void> send_user_authentication_success();
 
-    ErrorOr<void> handle_generic_packet(GenericMessage&&);
+    ErrorOr<ShouldDisconnect> handle_generic_packet(GenericMessage&&);
 
     ErrorOr<void> handle_channel_open_message(GenericMessage&);
     ErrorOr<void> send_channel_open_confirmation(Session const&);
     ErrorOr<void> handle_channel_request(GenericMessage&);
+    ErrorOr<void> handle_channel_exec(Session&, GenericMessage&);
     ErrorOr<void> send_channel_success_message(Session const&);
-    ErrorOr<void> send_channel_data(Session const&, ByteBuffer const&);
-    ErrorOr<void> send_channel_close(Session const&);
+    ErrorOr<void> send_channel_data(Session const&, ReadonlyBytes);
+    ErrorOr<void> handle_channel_close(GenericMessage&);
+    ErrorOr<void> send_channel_close(Session&);
     ErrorOr<Session*> find_session(u32 sender_channel_id);
 
     State m_state { State::Constructed };

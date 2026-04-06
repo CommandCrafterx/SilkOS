@@ -22,28 +22,32 @@
 
 namespace SSH::Server {
 
-ErrorOr<void> SSHClient::handle_data(ByteBuffer& data)
+ErrorOr<SSHClient::ShouldDisconnect> SSHClient::handle_data(ByteBuffer& data)
 {
     switch (m_state) {
     case State::Constructed:
-        return handle_protocol_version(data);
+        TRY(handle_protocol_version(data));
+        break;
     case State::WaitingForKeyProtocolExchange:
-        return handle_key_protocol_exchange(data);
+        TRY(handle_key_protocol_exchange(data));
+        break;
     case State::WaitingForKeyExchange:
-        return handle_key_exchange(data);
+        TRY(handle_key_exchange(data));
+        break;
     case State::WaitingForNewKeysMessage:
         TRY(handle_new_keys_message(data));
         m_state = State::KeyExchanged;
-        return {};
+        break;
     case State::KeyExchanged:
-        return handle_service_request(TRY(unpack_generic_message(data)));
+        TRY(handle_service_request(TRY(unpack_generic_message(data))));
+        break;
     case State::WaitingForUserAuthentication:
-        return handle_user_authentication(TRY(unpack_generic_message(data)));
+        TRY(handle_user_authentication(TRY(unpack_generic_message(data))));
+        break;
     case State::Authentified:
-        TRY(handle_generic_packet(TRY(unpack_generic_message(data))));
-        return {};
+        return handle_generic_packet(TRY(unpack_generic_message(data)));
     }
-    VERIFY_NOT_REACHED();
+    return ShouldDisconnect::No;
 }
 
 // 4.2.  Protocol Version Exchange
@@ -325,18 +329,26 @@ ErrorOr<void> SSHClient::send_user_authentication_success()
     return {};
 }
 
-ErrorOr<void> SSHClient::handle_generic_packet(GenericMessage&& message)
+ErrorOr<SSHClient::ShouldDisconnect> SSHClient::handle_generic_packet(GenericMessage&& message)
 {
     switch (message.type) {
+    case MessageID::DISCONNECT:
+        TRY(handle_disconnect_message(message.data));
+        return ShouldDisconnect::Yes;
     case MessageID::CHANNEL_OPEN:
-        return handle_channel_open_message(message);
+        TRY(handle_channel_open_message(message));
+        break;
     case MessageID::CHANNEL_REQUEST:
-        return handle_channel_request(message);
+        TRY(handle_channel_request(message));
+        break;
+    case MessageID::CHANNEL_CLOSE:
+        TRY(handle_channel_close(message));
+        break;
     default:
         dbgln_if(SSH_DEBUG, "Unexpected packet: {}", to_underlying(message.type));
         return Error::from_string_literal("Unexpected packet type");
     }
-    VERIFY_NOT_REACHED();
+    return ShouldDisconnect::No;
 }
 
 // 5.1.  Opening a Channel
@@ -414,45 +426,53 @@ ErrorOr<void> SSHClient::handle_channel_request(GenericMessage& message)
     }
 
     if (request_type == "exec"sv.bytes()) {
-        auto command = TRY(decode_string(message.payload));
-
-        // FIXME: This is a naive implementation, we should stream the result back
-        //        to the user and not block the event loop during the execution of
-        //        the command.
-        //        We should also use the user's shell rather than hardcoding it.
-
-#ifdef AK_OS_SERENITY
-        auto shell = "/bin/Shell"sv;
-#else
-        auto shell = "/bin/sh"sv;
-#endif
-
-        Vector<ByteString> args;
-        args.append(shell);
-        args.append("-c");
-        args.append(ByteString(command.bytes()));
-
-        Vector<char const*> raw_args;
-        raw_args.ensure_capacity(args.size() + 1);
-        for (auto& arg : args)
-            raw_args.append(arg.characters());
-
-        raw_args.append(nullptr);
-
-        auto child = TRY(Core::Command::create(shell, raw_args.data()));
-        auto output = TRY(child->read_all());
-        auto status = TRY(child->status());
-
-        if (status != Core::Command::ProcessResult::DoneWithZeroExitCode)
-            return Error::from_string_literal("Unable to run command");
-
-        TRY(send_channel_success_message(session));
-        TRY(send_channel_data(session, output.standard_output));
-        TRY(send_channel_close(session));
+        TRY(handle_channel_exec(session, message));
         return {};
     }
 
     return Error::from_string_literal("Unsupported channel request");
+}
+
+// 6.5.  Starting a Shell or a Command
+// https://datatracker.ietf.org/doc/html/rfc4254#section-6.5
+ErrorOr<void> SSHClient::handle_channel_exec(Session& session, GenericMessage& message)
+{
+    auto command = TRY(decode_string(message.payload));
+
+    // FIXME: This is a naive implementation, we should stream the result back
+    //        to the user and not block the event loop during the execution of
+    //        the command.
+    //        We should also use the user's shell rather than hardcoding it.
+
+#ifdef AK_OS_SERENITY
+    auto shell = "/bin/Shell"sv;
+#else
+    auto shell = "/bin/sh"sv;
+#endif
+
+    Vector<ByteString> args;
+    args.append(shell);
+    args.append("-c");
+    args.append(ByteString(command.bytes()));
+
+    Vector<char const*> raw_args;
+    raw_args.ensure_capacity(args.size() + 1);
+    for (auto& arg : args)
+        raw_args.append(arg.characters());
+
+    raw_args.append(nullptr);
+
+    auto child = TRY(Core::Command::create(shell, raw_args.data()));
+    auto output = TRY(child->read_all());
+    auto status = TRY(child->status());
+
+    if (status != Core::Command::ProcessResult::DoneWithZeroExitCode)
+        return Error::from_string_literal("Unable to run command");
+
+    TRY(send_channel_success_message(session));
+    TRY(send_channel_data(session, output.standard_output));
+    TRY(send_channel_close(session));
+    return {};
 }
 
 ErrorOr<void> SSHClient::send_channel_success_message(Session const& session)
@@ -464,7 +484,7 @@ ErrorOr<void> SSHClient::send_channel_success_message(Session const& session)
     return {};
 }
 
-ErrorOr<void> SSHClient::send_channel_data(Session const& session, ByteBuffer const& data)
+ErrorOr<void> SSHClient::send_channel_data(Session const& session, ReadonlyBytes data)
 {
     AllocatingMemoryStream stream;
     TRY(stream.write_value(MessageID::CHANNEL_DATA));
@@ -474,8 +494,23 @@ ErrorOr<void> SSHClient::send_channel_data(Session const& session, ByteBuffer co
     return {};
 }
 
-ErrorOr<void> SSHClient::send_channel_close(Session const& session)
+ErrorOr<void> SSHClient::handle_channel_close(GenericMessage& message)
 {
+    auto recipient_channel_id = TRY(message.payload.read_value<NetworkOrdered<u32>>());
+    auto& session = *TRY(find_session(recipient_channel_id));
+
+    if (!session.is_closed)
+        TRY(send_channel_close(session));
+
+    m_sessions.remove_first_matching([&](Session const& s) { return s.local_channel_id == session.local_channel_id; });
+
+    return {};
+}
+
+ErrorOr<void> SSHClient::send_channel_close(Session& session)
+{
+    session.is_closed = true;
+
     AllocatingMemoryStream stream;
     TRY(stream.write_value(MessageID::CHANNEL_CLOSE));
     TRY(stream.write_value<NetworkOrdered<u32>>(session.local_channel_id));
