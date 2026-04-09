@@ -298,25 +298,144 @@ ErrorOr<void> SSHClient::handle_user_authentication(GenericMessage message)
     auto service_name = TRY(decode_string(message.payload));
     auto method_name = TRY(decode_string(message.payload));
 
-    dbgln_if(SSH_DEBUG, "User authentication username: {:s}", username.bytes());
-    dbgln_if(SSH_DEBUG, "User authentication service_name: {:s}", service_name.bytes());
-    dbgln_if(SSH_DEBUG, "User authentication method name: {:s}", method_name.bytes());
-
     if (username != TRY(Core::Account::self(Core::Account::Read::PasswdOnly)).username())
         return Error::from_string_literal("Can't authenticate for another user account");
 
-    if (method_name == "none"sv.bytes()) {
-        // FIXME: Implement proper authentication!!!
+    // "The 'service name' specifies the service to start after authentication. There may
+    // be several different authenticated services provided. If the requested service is
+    // not available, the server MAY disconnect immediately or at any later time. Sending
+    // a proper disconnect message is RECOMMENDED.  In any case, if the service does not
+    // exist, authentication MUST NOT be accepted."
+    if (service_name != "ssh-connection"sv.bytes())
+        return Error::from_string_literal("Unknown service name.");
+
+    if (method_name == "publickey"sv.bytes())
+        return handle_publickey_message(message, username, service_name);
+
+    TRY(send_available_authentication_methods());
+    // FIXME: Disconnect the client after too many attempts.
+
+    return {};
+}
+
+namespace {
+
+// 7.  Public Key Authentication Method: "publickey"
+// https://datatracker.ietf.org/doc/html/rfc4252#section-7
+ErrorOr<ByteBuffer> make_authentication_message(
+    ReadonlyBytes session_identifier,
+    ReadonlyBytes user_name,
+    ReadonlyBytes service_name,
+    ReadonlyBytes algorithm_name,
+    TypedBlob const& public_key)
+{
+    AllocatingMemoryStream stream;
+
+    TRY(encode_string(stream, session_identifier));
+    TRY(stream.write_value(MessageID::USERAUTH_REQUEST));
+    TRY(encode_string(stream, user_name));
+    TRY(encode_string(stream, service_name));
+    TRY(encode_string(stream, "publickey"sv));
+    TRY(stream.write_value(true));
+    TRY(encode_string(stream, algorithm_name));
+    TRY(public_key.encode(stream));
+
+    return stream.read_until_eof();
+}
+
+}
+
+// 7.  Public Key Authentication Method: "publickey"
+// https://datatracker.ietf.org/doc/html/rfc4252#section-7
+ErrorOr<void> SSHClient::handle_publickey_message(
+    GenericMessage& message,
+    ReadonlyBytes user_name,
+    ReadonlyBytes service_name)
+{
+    bool contains_signature = TRY(message.payload.read_value<bool>());
+    auto algorithm_name = TRY(decode_string(message.payload));
+    auto blob = TRY(decode_string(message.payload));
+
+    if (!contains_signature) {
+        // FIXME: Stop being lazy and actually check if this could be a
+        //        possible match.
+        TRY(send_publickey_ok_message(algorithm_name, blob));
+        return {};
+    }
+
+    auto signature = TRY(TypedBlob::decode(message.payload));
+
+    auto authorized_keys = []() -> Vector<TypedBlob> {
+        auto maybe_keys = ServerConfiguration::the().get_authorized_keys_for_user();
+        if (maybe_keys.is_error()) {
+            dbgln("warning: Impossible to load authorized keys: {}", maybe_keys.release_error());
+            return {};
+        }
+        return maybe_keys.release_value();
+    }();
+
+    for (auto const& public_key : authorized_keys) {
+        if (algorithm_name != TypedBlob::type_to_string(public_key.type).bytes())
+            continue;
+
+        auto authentication_message = TRY(make_authentication_message(
+            session_id(),
+            user_name,
+            service_name,
+            algorithm_name,
+            public_key));
+
+        bool success { false };
+        switch (public_key.type) {
+        case TypedBlob::Type::SSH_ED25519:
+            success = Crypto::Curves::Ed25519::verify(public_key.key, signature.key, authentication_message);
+        }
+
+        if (!success)
+            continue;
 
         m_state = State::Authentified;
         TRY(send_user_authentication_success());
 
-        // FIXME: Also send a cool banner :^)
+        outln("Successful authentication for: {:s}", user_name);
 
+        // FIXME: Also send a cool banner :^)
         return {};
     }
 
-    return Error::from_string_literal("Unsupported userauth method");
+    // This is the way to tell the client the authentication didn't succeed.
+    TRY(send_available_authentication_methods());
+    return {};
+}
+
+ErrorOr<void> SSHClient::send_publickey_ok_message(ReadonlyBytes algorithm_name, ReadonlyBytes blob)
+{
+    AllocatingMemoryStream stream;
+    TRY(stream.write_value(MessageID::USERAUTH_PK_OK));
+    TRY(encode_string(stream, algorithm_name));
+    TRY(encode_string(stream, blob));
+
+    auto packet = TRY(stream.read_until_eof());
+    TRY(write_packet(packet));
+
+    return {};
+}
+
+// 5.1.  Responses to Authentication Requests
+// https://datatracker.ietf.org/doc/html/rfc4252#section-5.1
+ErrorOr<void> SSHClient::send_available_authentication_methods()
+{
+    AllocatingMemoryStream stream;
+    TRY(stream.write_value(MessageID::USERAUTH_FAILURE));
+    static constexpr auto available_methods = to_array({ "publickey"sv });
+    TRY(encode_name_list(stream, available_methods));
+
+    // "The value of 'partial success' MUST be TRUE if the authentication
+    //   request to which this is a response was successful."
+    TRY(stream.write_value(false));
+
+    TRY(write_packet(TRY(stream.read_until_eof())));
+    return {};
 }
 
 // 5.1.  Responses to Authentication Requests

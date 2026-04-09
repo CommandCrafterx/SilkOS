@@ -29,6 +29,11 @@ struct TypedBlob {
         SSH_ED25519,
     };
 
+    static StringView type_to_string(Type t);
+
+    static ErrorOr<TypedBlob> decode(FixedMemoryStream& stream);
+    static ErrorOr<TypedBlob> read_from_string(StringView);
+
     Type type { Type::SSH_ED25519 };
     ByteBuffer key {};
 
