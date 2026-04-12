@@ -694,7 +694,7 @@ def set_up_boot_drive(config: Configuration):
         config.kernel_cmdline.append("root=block3:0")
     elif config.boot_drive_type == BootDriveType.USB_UAS:
         config.add_device("qemu-xhci,id=boot-drive-xhci,p3=0")
-        config.add_device("usb-uas,bus=boot-drive-xhci.0,id=boot-drive-uas,pcap=log.pcap")
+        config.add_device("usb-uas,bus=boot-drive-xhci.0,id=boot-drive-uas")
         config.add_device("scsi-hd,bus=boot-drive-uas.0,scsi-id=0,lun=0,drive=boot-drive")
         # FIXME: Find a better way to address the usb drive
         config.kernel_cmdline.append("root=block3:0")
@@ -785,7 +785,7 @@ def set_up_machine_devices(config: Configuration):
         config.cpu_count = None
         config.audio_devices = []
         config.kernel_cmdline.extend(["serial_debug"])
-        config.qemu_cpu = "max" if config.architecture == Arch.Aarch64 else None
+        config.qemu_cpu = "max"
 
         if config.machine_type != MachineType.CI:
             config.extra_arguments.extend(["-serial", "stdio"])
