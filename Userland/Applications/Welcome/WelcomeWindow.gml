@@ -71,7 +71,7 @@
 
             @GUI::CheckBox {
                 name: "startup_checkbox"
-                text: "Show Welcome the next time SerenityOS starts"
+                text: "Show Welcome the next time SilkOS starts"
             }
         }
 
