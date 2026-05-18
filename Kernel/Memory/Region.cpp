@@ -221,11 +221,11 @@ bool Region::should_dirty_on_write(size_t page_index, ShouldLockVMObject should_
     return is_not_dirty(page_index);
 }
 
-bool Region::map_individual_page_impl(size_t page_index, RefPtr<PhysicalRAMPage> page, ShouldLockVMObject should_lock_vmobject)
+bool Region::map_individual_page_impl(size_t page_index, RefPtr<PhysicalRAMPage> page, ShouldLockVMObject should_lock_vmobject, bool readable, bool writeable)
 {
     if (!page)
         return map_individual_page_impl(page_index, {}, false, false, should_lock_vmobject);
-    return map_individual_page_impl(page_index, page->paddr(), is_readable(), is_writable() && !page->is_shared_zero_page() && !page->is_lazy_committed_page(), should_lock_vmobject);
+    return map_individual_page_impl(page_index, page->paddr(), readable, writeable && !page->is_shared_zero_page() && !page->is_lazy_committed_page(), should_lock_vmobject);
 }
 
 bool Region::map_individual_page_impl(size_t page_index, PhysicalAddress paddr)
@@ -266,14 +266,14 @@ bool Region::map_individual_page_impl(size_t page_index, PhysicalAddress paddr, 
     return true;
 }
 
-bool Region::map_individual_page_impl(size_t page_index, ShouldLockVMObject should_lock_vmobject)
+bool Region::map_individual_page_impl(size_t page_index, ShouldLockVMObject should_lock_vmobject, bool readable, bool writeable)
 {
     RefPtr<PhysicalRAMPage> page = nullptr;
     if (should_lock_vmobject == ShouldLockVMObject::Yes)
         page = physical_page(page_index);
     else
         page = physical_page_locked(page_index);
-    return map_individual_page_impl(page_index, page, should_lock_vmobject);
+    return map_individual_page_impl(page_index, page, should_lock_vmobject, readable, writeable);
 }
 
 bool Region::remap_vmobject_page(size_t page_index, NonnullRefPtr<PhysicalRAMPage> physical_page, ShouldLockVMObject should_lock_vmobject)
@@ -284,7 +284,7 @@ bool Region::remap_vmobject_page(size_t page_index, NonnullRefPtr<PhysicalRAMPag
     if (!translate_vmobject_page(page_index))
         return false;
 
-    bool success = map_individual_page_impl(page_index, physical_page, should_lock_vmobject);
+    bool success = map_individual_page_impl(page_index, physical_page, should_lock_vmobject, is_readable(), is_writable());
     MemoryManager::flush_tlb(m_page_directory, vaddr_from_page_index(page_index));
     return success;
 }
@@ -317,7 +317,7 @@ void Region::set_page_directory(PageDirectory& page_directory)
     m_page_directory = page_directory;
 }
 
-ErrorOr<void> Region::map_impl(PageDirectory& page_directory, ShouldLockVMObject should_lock_vmobject, ShouldFlushTLB should_flush_tlb)
+ErrorOr<void> Region::map_impl(PageDirectory& page_directory, ShouldLockVMObject should_lock_vmobject, ShouldFlushTLB should_flush_tlb, bool readable, bool writeable)
 {
     SpinlockLocker page_lock(page_directory.get_lock());
 
@@ -329,7 +329,7 @@ ErrorOr<void> Region::map_impl(PageDirectory& page_directory, ShouldLockVMObject
     set_page_directory(page_directory);
     size_t page_index = 0;
     while (page_index < page_count()) {
-        if (!map_individual_page_impl(page_index, should_lock_vmobject))
+        if (!map_individual_page_impl(page_index, should_lock_vmobject, readable, writeable))
             break;
         ++page_index;
     }
@@ -344,7 +344,40 @@ ErrorOr<void> Region::map_impl(PageDirectory& page_directory, ShouldLockVMObject
 
 ErrorOr<void> Region::map(PageDirectory& page_directory, ShouldFlushTLB should_flush_tlb)
 {
-    return map_impl(page_directory, ShouldLockVMObject::Yes, should_flush_tlb);
+    // Flushing the data cache requires this region to be in the current address space,
+    // or in the always mapped kernel address space.
+    VERIFY(&page_directory == Memory::PageDirectory::find_current() || &page_directory == &MM.kernel_page_directory());
+
+    // NOTE: The !Processor::current().has_self_snooping() check assumes that either all or none of
+    //       the processors in an SMP system support self-snooping, since a context switch can happen
+    //       after that check.
+    if (m_memory_type != MemoryType::Normal && !Processor::current().has_self_snooping()) {
+        // The physical pages used by this region could have previously been used by a cacheable region,
+        // so some cache lines might still contain data for this region.
+        // Because non-cacheable accesses bypass the data cache, those lines could later be written back
+        // after the underlying physical memory has changed.
+        // Since we don't track whether physical pages were previously mapped as cacheable,
+        // always flush the data cache to remove any stale entries for this region.
+        // If the processor supports self-snooping, the processor will snoop its own cache and handle
+        // such memory type conflicts transparently.
+
+        if (!is_writable()) {
+            // Temporarily map it as writable, so we can flush the data cache.
+            // In this case, we always need to flush the TLB to change the permissions,
+            // both when making the mapping writable and when reverting to the original permissions.
+
+            TRY(map_impl(page_directory, ShouldLockVMObject::Yes, ShouldFlushTLB::Yes, true, true));
+            Processor::flush_data_cache(vaddr(), PAGE_SIZE * page_count());
+
+            TRY(map_impl(page_directory, ShouldLockVMObject::Yes, ShouldFlushTLB::Yes, is_readable(), is_writable()));
+        } else {
+            TRY(map_impl(page_directory, ShouldLockVMObject::Yes, should_flush_tlb, is_readable(), is_writable()));
+            Processor::flush_data_cache(vaddr(), PAGE_SIZE * page_count());
+        }
+        return {};
+    }
+
+    return map_impl(page_directory, ShouldLockVMObject::Yes, should_flush_tlb, is_readable(), is_writable());
 }
 
 ErrorOr<void> Region::map(PageDirectory& page_directory, PhysicalAddress paddr, ShouldFlushTLB should_flush_tlb)
@@ -374,7 +407,7 @@ void Region::remap_impl(ShouldLockVMObject should_lock_vmobject)
     if (m_vmobject->is_mmio())
         result = map(*m_page_directory, static_cast<MMIOVMObject const&>(*m_vmobject).base_address());
     else
-        result = map_impl(*m_page_directory, should_lock_vmobject, ShouldFlushTLB::Yes);
+        result = map_impl(*m_page_directory, should_lock_vmobject, ShouldFlushTLB::Yes, is_readable(), is_writable());
     if (result.is_error())
         TODO();
 }

@@ -11,6 +11,7 @@
 #include <AK/Format.h>
 #include <AK/MemoryStream.h>
 #include <AK/Random.h>
+#include <AK/TemporaryChange.h>
 #include <LibCore/Account.h>
 #include <LibCore/EventLoop.h>
 #include <LibCore/Process.h>
@@ -24,8 +25,13 @@
 
 namespace SSH::Server {
 
-ErrorOr<SSHClient::ShouldDisconnect> SSHClient::handle_data(ByteBuffer& data)
+ErrorOr<SSHClient::BehaviorControl> SSHClient::handle_data(ByteBuffer& data)
 {
+    if (m_state != State::Constructed) {
+        if (!is_buffer_containing_a_full_packet(data))
+            return BehaviorControl::WaitForMoreData;
+    }
+
     switch (m_state) {
     case State::Constructed:
         TRY(handle_protocol_version(data));
@@ -49,7 +55,7 @@ ErrorOr<SSHClient::ShouldDisconnect> SSHClient::handle_data(ByteBuffer& data)
     case State::Authentified:
         return handle_generic_packet(TRY(unpack_generic_message(data)));
     }
-    return ShouldDisconnect::No;
+    return BehaviorControl::ContinueExecution;
 }
 
 // 4.2.  Protocol Version Exchange
@@ -459,17 +465,26 @@ ErrorOr<void> SSHClient::send_user_authentication_success()
     return {};
 }
 
-ErrorOr<SSHClient::ShouldDisconnect> SSHClient::handle_generic_packet(GenericMessage&& message)
+ErrorOr<SSHClient::BehaviorControl> SSHClient::handle_generic_packet(GenericMessage&& message)
 {
     switch (message.type) {
     case MessageID::DISCONNECT:
         TRY(handle_disconnect_message(message.data));
-        return ShouldDisconnect::Yes;
+        return BehaviorControl::Disconnect;
     case MessageID::CHANNEL_OPEN:
         TRY(handle_channel_open_message(message));
         break;
     case MessageID::CHANNEL_REQUEST:
         TRY(handle_channel_request(message));
+        break;
+    case MessageID::CHANNEL_DATA:
+        TRY(handle_channel_data(message));
+        break;
+    case MessageID::CHANNEL_EOF:
+        TRY(handle_channel_eof(message));
+        break;
+    case MessageID::CHANNEL_WINDOW_ADJUST:
+        TRY(handle_channel_window_adjust_message(message));
         break;
     case MessageID::CHANNEL_CLOSE:
         TRY(handle_channel_close(message));
@@ -478,7 +493,7 @@ ErrorOr<SSHClient::ShouldDisconnect> SSHClient::handle_generic_packet(GenericMes
         dbgln_if(SSH_DEBUG, "Unexpected packet: {}", to_underlying(message.type));
         return Error::from_string_literal("Unexpected packet type");
     }
-    return ShouldDisconnect::No;
+    return BehaviorControl::ContinueExecution;
 }
 
 // 5.1.  Opening a Channel
@@ -522,18 +537,18 @@ ErrorOr<void> SSHClient::send_channel_open_confirmation(Session const& session)
     TRY(stream.write_value<NetworkOrdered<u32>>(session.sender_channel_id));
     TRY(stream.write_value<NetworkOrdered<u32>>(session.local_channel_id));
 
-    TRY(stream.write_value<NetworkOrdered<u32>>(session.window.size()));
+    TRY(stream.write_value<NetworkOrdered<u32>>(session.window_size));
     TRY(stream.write_value<NetworkOrdered<u32>>(session.maximum_packet_size));
 
     TRY(write_packet(TRY(stream.read_until_eof())));
     return {};
 }
 
-ErrorOr<Session*> SSHClient::find_session(u32 sender_channel_id)
+ErrorOr<NonnullRefPtr<Session>> SSHClient::find_session(u32 sender_channel_id)
 {
     for (auto& session : m_sessions) {
-        if (session.sender_channel_id == sender_channel_id)
-            return &session;
+        if (session->sender_channel_id == sender_channel_id)
+            return session;
     }
     return Error::from_string_literal("Session not found");
 }
@@ -565,9 +580,56 @@ ErrorOr<void> SSHClient::handle_channel_request(GenericMessage& message)
     return Error::from_string_literal("Unsupported channel request");
 }
 
+// 5.2.  Data Transfer
+// https://datatracker.ietf.org/doc/html/rfc4254#section-5.2
+ErrorOr<void> SSHClient::handle_channel_data(GenericMessage& message)
+{
+    auto recipient_channel_id = TRY(message.payload.read_value<NetworkOrdered<u32>>());
+    auto data = TRY(decode_string(message.payload));
+
+    auto& session = *TRY(find_session(recipient_channel_id));
+
+    if (session.system.has<Empty>())
+        return Error::from_string_literal("Received channel data while subsystem is unknown");
+
+    if (session.has_received_eof)
+        return Error::from_string_literal("Received channel data after EOF");
+
+    session.channel_data.append(data);
+
+    // FIXME: Make sure to cancel this coroutine if anything goes wrong.
+    if (!session.has_streaming_coroutine)
+        Core::EventLoop::adopt_coroutine(async_stream_data_to_subsystem(session));
+
+    return {};
+}
+
+Coroutine<void> SSHClient::async_stream_data_to_subsystem(NonnullRefPtr<Session> session)
+{
+    TemporaryChange t(session->has_streaming_coroutine, true);
+
+    auto maybe_error = co_await [&]() -> Coroutine<ErrorOr<void>> {
+        while (true) {
+            if (session->channel_data.data().is_empty())
+                break;
+
+            CO_TRY(co_await session->system.visit(
+                [&](auto& system) -> Coroutine<ErrorOr<void>> { return system.handle_channel_data(session); },
+                [](Empty) -> Coroutine<ErrorOr<void>> { VERIFY_NOT_REACHED(); }));
+        }
+        co_return {};
+    }();
+
+    if (maybe_error.is_error()) {
+        dbgln("Unable to process incoming channel data: {}", maybe_error.error());
+        // FIXME: Think about what we should do with this error.
+    }
+    co_return;
+}
+
 // 6.5.  Starting a Shell or a Command
 // https://datatracker.ietf.org/doc/html/rfc4254#section-6.5
-ErrorOr<void> SSHClient::handle_channel_exec(Session& session, GenericMessage& message)
+ErrorOr<void> SSHClient::handle_channel_exec(NonnullRefPtr<Session> const& session, GenericMessage& message)
 {
     auto command = TRY(decode_string(message.payload));
 
@@ -603,32 +665,25 @@ ErrorOr<void> SSHClient::handle_channel_exec(Session& session, GenericMessage& m
     TRY(Core::System::close(stdout_fds[1]));
     TRY(Core::System::close(stderr_fds[1]));
 
-    session.system = ExecData {
-        .child = move(child),
-        .stdin_ = TRY(Core::File::adopt_fd(stdin_fds[1], Core::File::OpenMode::Write)),
-        .stdout_ = TRY(Core::File::adopt_fd(stdout_fds[0], Core::File::OpenMode::Read)),
-        .stderr_ = TRY(Core::File::adopt_fd(stderr_fds[0], Core::File::OpenMode::Read)),
-    };
+    session->system = TRY(ExecData::create(move(child), stdin_fds[1], stdout_fds[0], stderr_fds[0]));
 
     TRY(send_channel_success_message(session));
 
     // FIXME: Make sure to cancel these coroutines if anything goes wrong.
-    Core::EventLoop::adopt_coroutine(async_stream_std_data(session.sender_channel_id, [](ExecData& exec_data) -> Core::File& { return *exec_data.stdout_; }, [this](auto&... args) { return send_channel_data(args...); }));
-    Core::EventLoop::adopt_coroutine(async_stream_std_data(session.sender_channel_id, [](ExecData& exec_data) -> Core::File& { return *exec_data.stderr_; }, [this](auto&... args) { return send_channel_extended_data(args...); }));
-    Core::EventLoop::adopt_coroutine(async_wait_for_child(session.sender_channel_id));
+    Core::EventLoop::adopt_coroutine(async_stream_std_data(session, [](ExecData& exec_data) -> Core::File& { return *exec_data.stdout_; }, [this](auto&... args) { return send_channel_data(args...); }));
+    Core::EventLoop::adopt_coroutine(async_stream_std_data(session, [](ExecData& exec_data) -> Core::File& { return *exec_data.stderr_; }, [this](auto&... args) { return send_channel_extended_data(args...); }));
+    Core::EventLoop::adopt_coroutine(async_wait_for_child(session));
 
     return {};
 }
 
 template<typename F, typename F2>
-Coroutine<void> SSHClient::async_stream_std_data(u32 sender_channel_id, F&& file_extractor, F2&& sender)
+Coroutine<void> SSHClient::async_stream_std_data(NonnullRefPtr<Session> session, F file_extractor, F2 sender)
 {
     auto maybe_error = co_await [&]() -> Coroutine<ErrorOr<void>> {
         while (true) {
-            auto& session = *CO_TRY(find_session(sender_channel_id));
-
             auto output_buffer = CO_TRY(ByteBuffer::create_uninitialized(PAGE_SIZE));
-            auto output = CO_TRY(co_await file_extractor(session.system.template get<ExecData>()).async_read_some(output_buffer));
+            auto output = CO_TRY(co_await file_extractor(session->system.template get<ExecData>()).async_read_some(output_buffer));
 
             if (output.is_empty())
                 break;
@@ -645,21 +700,17 @@ Coroutine<void> SSHClient::async_stream_std_data(u32 sender_channel_id, F&& file
     co_return;
 }
 
-Coroutine<void> SSHClient::async_wait_for_child(u32 sender_channel_id)
+Coroutine<void> SSHClient::async_wait_for_child(NonnullRefPtr<Session> session)
 {
     auto maybe_error = [&]() -> ErrorOr<void> {
-        auto& session = *TRY(find_session(sender_channel_id));
-
         // FIXME: If the child closes STDOUT, we will block the server in
         //        wait_for_termination() bellow. We should implement a way to
         //        wake up the event loop on the child's death.
-        Core::EventLoop::current().spin_until([this, sender_channel_id]() {
-            auto& session = *MUST(find_session(sender_channel_id));
-            auto& exec_data = session.system.get<ExecData>();
-            return exec_data.stdout_->is_eof();
+        Core::EventLoop::current().spin_until([&session]() {
+            return session->system.get<ExecData>().stdout_->is_eof();
         });
 
-        auto exited_with_code_0 = TRY(session.system.get<ExecData>().child.wait_for_termination());
+        auto exited_with_code_0 = TRY(session->system.get<ExecData>().child.wait_for_termination());
 
         // FIXME: Send the actual exit status.
         TRY(send_exit_status(session, exited_with_code_0 ? 0 : -1));
@@ -715,6 +766,33 @@ ErrorOr<void> SSHClient::send_channel_extended_data(Session const& session, Read
     TRY(stream.write_value<NetworkOrdered<u32>>(EXTENDED_DATA_STDERR));
     TRY(encode_string(stream, data));
     TRY(write_packet(TRY(stream.read_until_eof())));
+    return {};
+}
+
+ErrorOr<void> SSHClient::handle_channel_eof(GenericMessage& message)
+{
+    auto recipient_channel_id = TRY(message.payload.read_value<NetworkOrdered<u32>>());
+    auto& session = *TRY(find_session(recipient_channel_id));
+
+    // "When a party will no longer send more data to a channel, it SHOULD send SSH_MSG_CHANNEL_EOF."
+    // "No explicit response is sent to this message.  However, the application may send EOF to
+    // whatever is at the other end of the channel.  Note that the channel remains open after this
+    // message, and more data may still be sent in the other direction.  This message does not
+    // consume window space and can be sent even if no window space is available."
+
+    session.has_received_eof = true;
+
+    session.system.visit(
+        [&](auto& system) { system.handle_channel_eof(session); },
+        [](Empty) {});
+
+    return {};
+}
+
+ErrorOr<void> SSHClient::handle_channel_window_adjust_message(GenericMessage&)
+{
+    // FIXME: Actually support this packet and don't spam the client without
+    //        respecting its window size.
     return {};
 }
 

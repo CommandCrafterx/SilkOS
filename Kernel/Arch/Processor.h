@@ -63,6 +63,8 @@ public:
     static void flush_tlb_local(VirtualAddress vaddr, size_t page_count);
     static void flush_tlb(Memory::PageDirectory const*, VirtualAddress, size_t);
 
+    // FIXME: Add wrappers for data cache clean or invalidate operations when necessary.
+    static void flush_data_cache(VirtualAddress vaddr, size_t byte_count);
     static void flush_instruction_cache(VirtualAddress vaddr, size_t byte_count);
 
     void early_initialize(u32 cpu);
@@ -92,6 +94,7 @@ public:
     {
         return current_id() == 0;
     }
+    ALWAYS_INLINE bool has_self_snooping() const;
     ALWAYS_INLINE bool has_nx() const;
     ALWAYS_INLINE bool has_feature(CPUFeature::Type const& feature) const
     {
