@@ -14,6 +14,7 @@
 #include <AK/Variant.h>
 #include <LibCore/File.h>
 #include <LibCore/Process.h>
+#include <LibSSH/SFTP/Server.h>
 
 namespace SSH {
 
@@ -30,6 +31,8 @@ struct ExecData {
     NonnullOwnPtr<Core::File> stdin_;
     NonnullOwnPtr<Core::File> stdout_;
     NonnullOwnPtr<Core::File> stderr_;
+
+    Optional<int> exit_status {};
 
     Coroutine<ErrorOr<void>> handle_channel_data(Session&);
     void handle_channel_eof(Session const&);
@@ -49,7 +52,7 @@ struct Session : public RefCounted<Session> {
     StreamBuffer channel_data {};
     bool has_streaming_coroutine { false };
 
-    Variant<Empty, ExecData> system {};
+    Variant<Empty, ExecData, SFTP::Server> system {};
 
     bool is_closed { false };
     bool has_received_eof { false };

@@ -107,14 +107,28 @@ private:
 
     struct EndpointRing {
         OwnPtr<Memory::Region> region;
+
+        // Managed by us.
         u32 enqueue_index { 0 };
-        u32 free_transfer_request_blocks { endpoint_ring_size - 1 }; // One less, since we use up the last one for the link TRB
+
+        // Managed by the controller, therefore it might be behind the actual value.
+        u32 dequeue_index { 0 };
+
         u32 max_burst_payload { 0 };
         Pipe::Type type { Pipe::Type::Control };
         u8 producer_cycle_state { 1 };
         IntrusiveList<&PendingTransfer::endpoint_list_node> pending_transfers;
+
+        struct LastShortTransfer {
+            size_t start_transfer_trb_index;
+            size_t end_transfer_trb_index;
+        };
+        Optional<LastShortTransfer> last_short_transfer;
+
         TransferRequestBlock* ring_vaddr() const { return reinterpret_cast<TransferRequestBlock*>(region->vaddr().as_ptr()); }
         PhysicalPtr ring_paddr() const { return region->physical_page(0)->paddr().get(); }
+
+        bool has_space_for_trbs(size_t count);
     };
     static constexpr size_t max_endpoints = 31;
     static constexpr size_t endpoint_ring_size = PAGE_SIZE / sizeof(TransferRequestBlock);

@@ -41,11 +41,8 @@ public:
 
 class SSHClient : public Peer {
 public:
-    explicit SSHClient(Core::TCPSocket& tcp_socket)
-        : Peer(tcp_socket)
-        , m_tcp_socket { tcp_socket }
-    {
-    }
+    explicit SSHClient(Core::TCPSocket& tcp_socket, Function<void()> disconnect);
+    ~SSHClient();
 
     enum class BehaviorControl : u8 {
         ContinueExecution,
@@ -91,6 +88,7 @@ private:
     ErrorOr<void> send_channel_open_confirmation(Session const&);
     ErrorOr<void> handle_channel_request(GenericMessage&);
     ErrorOr<void> handle_channel_data(GenericMessage&);
+    ErrorOr<void> handle_channel_subsystem(Session&, GenericMessage&);
     ErrorOr<void> handle_channel_exec(NonnullRefPtr<Session> const&, GenericMessage&);
     ErrorOr<void> send_channel_success_message(Session const&);
     ErrorOr<void> send_channel_data(Session const&, ReadonlyBytes);
@@ -105,15 +103,22 @@ private:
     template<typename F, typename F2>
     Coroutine<void> async_stream_std_data(NonnullRefPtr<Session>, F file_extractor, F2 sender);
     Coroutine<void> async_stream_data_to_subsystem(NonnullRefPtr<Session>);
-    Coroutine<void> async_wait_for_child(NonnullRefPtr<Session>);
+
+    ErrorOr<void> manage_child_death();
+    ErrorOr<void> close_exec_session_if_needed(Session&);
+
+    void disconnect(Error);
 
     State m_state { State::Constructed };
     Core::TCPSocket& m_tcp_socket;
+
+    Function<void()> m_disconnect;
 
     KeyExchangeData m_key_exchange_data {};
     ByteBuffer m_cookie {};
 
     Vector<NonnullRefPtr<Session>> m_sessions;
+    int m_sigchld_handler_id {};
 };
 
 } // SSHServer

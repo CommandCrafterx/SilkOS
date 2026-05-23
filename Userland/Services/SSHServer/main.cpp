@@ -27,20 +27,30 @@ OwnPtr<SSH::Server::TCPClient> g_client;
 ErrorOr<void> accept_connection()
 {
     auto client_socket = TRY(g_tcp_server->accept());
+    auto fd = client_socket->fd();
 
     if (auto pid = TRY(Core::System::fork()); pid == 0) {
         // Close the server listening socket. This is deferred to not close
         // the server from within itself.
-        Core::EventLoop::current().deferred_invoke([socket = move(client_socket)]() mutable {
+
+        // We need to ensure the socket survives until the deferred_invoke, but
+        // fd will be closed at the end of the scope with client_socket.
+        auto fd_copy = TRY(Core::System::dup(fd));
+
+        Core::EventLoop::current().deferred_invoke([fd_copy]() mutable {
             g_tcp_server = nullptr;
             auto on_quit = []() {
                 g_client = nullptr;
                 Core::EventLoop::current().quit(0);
             };
+
+            Core::EventLoop::notify_forked(Core::EventLoop::ForkEvent::Child);
+
+            auto socket = MUST(Core::TCPSocket::adopt_fd(fd_copy));
             g_client = SSH::Server::TCPClient::create(move(socket), move(on_quit));
         });
     } else {
-        // The client socket will be close when leaving this function.
+        // The client socket will be closed when leaving this function.
         // The server goes back to listening again.
     }
     return {};
@@ -50,7 +60,7 @@ ErrorOr<void> accept_connection()
 
 ErrorOr<int> serenity_main(Main::Arguments args)
 {
-    TRY(Core::System::pledge("stdio accept inet unix rpath proc exec"));
+    TRY(Core::System::pledge("stdio accept inet unix rpath proc exec sigaction"));
 
     // FIXME: Audit the server architecture and add veils wherever possible.
 
@@ -81,6 +91,21 @@ ErrorOr<int> serenity_main(Main::Arguments args)
 
     Core::EventLoop loop;
 
+    Core::EventLoop::register_signal(SIGCHLD, [&](int) {
+        while (true) {
+            auto maybe_result = Core::System::waitpid(-1, WNOHANG);
+            if (maybe_result.is_error()) {
+                auto error = maybe_result.release_error();
+                if (error.code() == EINTR)
+                    continue;
+                if (error.code() == ECHILD)
+                    return;
+                dbgln("Error while reaping child processes: {}", error);
+                loop.quit(-1);
+            }
+        }
+    });
+
     g_tcp_server = TRY(Core::TCPServer::try_create());
 
     g_tcp_server->on_ready_to_accept = [] {
@@ -93,6 +118,6 @@ ErrorOr<int> serenity_main(Main::Arguments args)
 
     outln("Listening on {}:{}", g_tcp_server->local_address().value(), g_tcp_server->local_port());
 
-    TRY(Core::System::pledge("stdio accept rpath proc exec"));
+    TRY(Core::System::pledge("stdio accept rpath proc exec sigaction"));
     return loop.exec();
 }
