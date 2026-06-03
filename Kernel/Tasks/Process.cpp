@@ -346,6 +346,8 @@ void Process::commit_creation(NonnullRefPtr<Process>& process)
     if (!process->m_is_kernel_process) {
         Process::register_new(*process);
 
+        Process::current().wait_blocker_set().register_new_child(process);
+
         // NOTE: All user processes have a leaked ref on them. It's balanced by Thread::WaitBlockerSet::finalize().
         process->ref();
     }
@@ -948,6 +950,8 @@ void Process::finalize()
 
     {
         if (is_fully_initialized()) {
+            unblock_waiters(Thread::WaitBlocker::UnblockFlags::Terminated);
+
             auto parent_process = Process::from_pid_ignoring_process_lists(ppid());
             if (parent_process && parent_process->is_user_process() && (parent_process->m_signal_action_data[SIGCHLD].flags & SA_NOCLDWAIT) != SA_NOCLDWAIT)
                 (void)parent_process->send_signal(SIGCHLD, this);
@@ -961,9 +965,6 @@ void Process::finalize()
         }
     }
 
-    if (is_fully_initialized())
-        unblock_waiters(Thread::WaitBlocker::UnblockFlags::Terminated);
-
     m_space.with([](auto& space) { space->remove_all_regions({}); });
 
     VERIFY(ref_count() > 0);
@@ -973,11 +974,6 @@ void Process::finalize()
     // anymore, in which case we'll just drop it right away.
     if (is_fully_initialized())
         m_wait_blocker_set.finalize();
-}
-
-void Process::disowned_by_waiter(Process& process)
-{
-    m_wait_blocker_set.disowned_by_waiter(process);
 }
 
 void Process::unblock_waiters(Thread::WaitBlocker::UnblockFlags flags, u8 signal)

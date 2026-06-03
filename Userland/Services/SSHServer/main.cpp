@@ -36,6 +36,7 @@ ErrorOr<void> accept_connection()
         // We need to ensure the socket survives until the deferred_invoke, but
         // fd will be closed at the end of the scope with client_socket.
         auto fd_copy = TRY(Core::System::dup(fd));
+        TRY(Core::System::fcntl(fd_copy, F_SETFD, FD_CLOEXEC));
 
         Core::EventLoop::current().deferred_invoke([fd_copy]() mutable {
             g_tcp_server = nullptr;
@@ -60,7 +61,7 @@ ErrorOr<void> accept_connection()
 
 ErrorOr<int> serenity_main(Main::Arguments args)
 {
-    TRY(Core::System::pledge("stdio accept inet unix rpath proc exec sigaction"));
+    TRY(Core::System::pledge("stdio accept inet unix rpath wpath cpath proc exec sigaction"));
 
     // FIXME: Audit the server architecture and add veils wherever possible.
 
@@ -103,6 +104,14 @@ ErrorOr<int> serenity_main(Main::Arguments args)
                 dbgln("Error while reaping child processes: {}", error);
                 loop.quit(-1);
             }
+            auto wait_result = maybe_result.value();
+            if (wait_result.pid == 0)
+                return;
+
+            if (WIFSIGNALED(wait_result.status))
+                warnln("Connection process exited with: signal({})", WTERMSIG(wait_result.status));
+            else if (WIFEXITED(wait_result.status) && WEXITSTATUS(wait_result.status) > 0)
+                warnln("Connection process exited with: exit code({})", WEXITSTATUS(wait_result.status));
         }
     });
 
@@ -118,6 +127,6 @@ ErrorOr<int> serenity_main(Main::Arguments args)
 
     outln("Listening on {}:{}", g_tcp_server->local_address().value(), g_tcp_server->local_port());
 
-    TRY(Core::System::pledge("stdio accept rpath proc exec sigaction"));
+    TRY(Core::System::pledge("stdio accept rpath wpath cpath proc exec sigaction"));
     return loop.exec();
 }

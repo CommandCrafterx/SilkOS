@@ -13,25 +13,6 @@
 
 namespace {
 
-ErrorOr<ByteBuffer> make_open_packet(StringView path, u32 request_id)
-{
-    AllocatingMemoryStream inner;
-
-    TRY(inner.write_value(SSH::SFTP::FXPMessageID::OPEN));
-    TRY(inner.write_value<NetworkOrdered<u32>>(request_id));
-    TRY(SSH::encode_string(inner, path));
-    TRY(inner.write_value<NetworkOrdered<u32>>(1)); // SSH_FXF_READ
-    TRY(inner.write_value<NetworkOrdered<u32>>(0)); // No attributes.
-
-    auto payload = TRY(inner.read_until_eof());
-
-    AllocatingMemoryStream packet;
-    TRY(packet.write_value<NetworkOrdered<u32>>(payload.size()));
-    TRY(packet.write_until_depleted(payload));
-
-    return TRY(packet.read_until_eof());
-}
-
 ErrorOr<ByteBuffer> make_read_packet(ByteBuffer const& handle, u32 request_id, u64 offset, u32 length)
 {
     AllocatingMemoryStream inner;
@@ -67,11 +48,7 @@ ErrorOr<void> run_read_test(StringView path, u64 offset, u64 size, bool expect_e
         }
 
         if (expect_eof) {
-            EXPECT_EQ(message.type, SSH::SFTP::FXPMessageID::STATUS);
-            EXPECT_EQ(request_id, TRY(stream.read_value<NetworkOrdered<u32>>()));
-            EXPECT_EQ(to_underlying(SSH::SFTP::FXStatus::FX_EOF), TRY(stream.read_value<NetworkOrdered<u32>>()));
-
-            return {};
+            return check_status_message(message, SSH::SFTP::FXStatus::FX_EOF, request_id);
         }
 
         EXPECT_EQ(message.type, SSH::SFTP::FXPMessageID::DATA);

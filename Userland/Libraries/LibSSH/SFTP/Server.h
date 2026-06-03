@@ -52,8 +52,10 @@ private:
     ErrorOr<void> send_file_handle(u32, File const&);
 
     ErrorOr<void> handle_read(FixedMemoryStream& stream);
+    ErrorOr<void> handle_write(FixedMemoryStream& stream);
+
     ErrorOr<void> send_data(u32, ReadonlyBytes);
-    ErrorOr<void> send_eof(u32);
+    ErrorOr<void> send_status_message(u32, FXStatus);
 
     ErrorOr<File*> find_file(ReadonlyBytes handle);
 
