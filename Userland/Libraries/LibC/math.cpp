@@ -25,41 +25,11 @@
 #    pragma clang diagnostic ignored "-Wdouble-promotion"
 #endif
 
-template<size_t>
-constexpr double e_to_power();
-template<>
-constexpr double e_to_power<0>() { return 1; }
-template<size_t exponent>
-constexpr double e_to_power() { return M_E * e_to_power<exponent - 1>(); }
-
-template<size_t>
-constexpr size_t factorial();
-template<>
-constexpr size_t factorial<0>() { return 1; }
-template<size_t value>
-constexpr size_t factorial() { return value * factorial<value - 1>(); }
-
-template<size_t>
-constexpr size_t product_even();
-template<>
-constexpr size_t product_even<2>() { return 2; }
-template<size_t value>
-constexpr size_t product_even() { return value * product_even<value - 2>(); }
-
-template<size_t>
-constexpr size_t product_odd();
-template<>
-constexpr size_t product_odd<1>() { return 1; }
-template<size_t value>
-constexpr size_t product_odd() { return value * product_odd<value - 2>(); }
-
 enum class RoundingMode {
     ToZero = FE_TOWARDZERO,
     Up = FE_UPWARD,
     Down = FE_DOWNWARD,
     ToEven = FE_TONEAREST,
-    // Round to nearest, ties away from zero.
-    ToMaxMagnitude = FE_TOMAXMAGNITUDE,
 };
 
 // This is much branchier than it really needs to be
@@ -125,9 +95,6 @@ static FloatType internal_to_integer(FloatType x, RoundingMode rounding_mode)
             should_round = has_nonhalf_fraction || has_half_fraction;
         break;
     case RoundingMode::ToZero:
-        break;
-    case RoundingMode::ToMaxMagnitude:
-        should_round = true;
         break;
     }
 
@@ -248,16 +215,54 @@ static FloatT internal_scalbn(FloatT x, int exponent) NOEXCEPT
     auto extractor = Extractor::from_float(x);
 
     if (extractor.exponent != 0) {
-        extractor.exponent = clamp((int)extractor.exponent + exponent, 0, (int)Extractor::exponent_max);
+        int new_exponent = (int)extractor.exponent + exponent;
+        if (new_exponent >= (int)Extractor::exponent_max) {
+            extractor.mantissa = 0;
+            extractor.exponent = Extractor::exponent_max;
+            return extractor.to_float();
+        }
+        if (new_exponent > 0) {
+            extractor.exponent = new_exponent;
+            return extractor.to_float();
+        }
+
+        // Number became denormal (which means extractor.exponent <= -exponent, in particular exponent < 0).
+        unsigned shift = min((unsigned)(-new_exponent), Extractor::mantissa_bits) + 1;
+        typename Extractor::ComponentType new_mantissa = extractor.mantissa >> shift;
+        if (shift <= Extractor::mantissa_bits)
+            new_mantissa |= 1ull << (Extractor::mantissa_bits - shift);
+
+        extractor.mantissa = new_mantissa;
+        extractor.exponent = 0;
         return extractor.to_float();
     }
 
-    unsigned leading_mantissa_zeroes = extractor.mantissa == 0 ? 32 : count_leading_zeroes(extractor.mantissa);
-    int shift = min((int)leading_mantissa_zeroes, exponent);
-    exponent = max(exponent - shift, 0);
+    // Denormal x.
+    if (exponent < 0) {
+        unsigned shift = min((unsigned)(-exponent), Extractor::mantissa_bits);
+        extractor.mantissa >>= shift;
+        return extractor.to_float();
+    }
 
-    extractor.exponent <<= shift;
-    extractor.exponent = exponent + 1;
+    // extractor.mantissa is always != 0 here.
+    // Mantissa is mantissa_bits long, count_leading_zeroes() counts in ComponentType, adjust:
+    auto const always_zero_bits = sizeof(typename FloatExtractor<FloatT>::ComponentType) * 8 - (FloatExtractor<FloatT>::mantissa_bits);
+    unsigned leading_mantissa_zeroes = count_leading_zeroes(extractor.mantissa) - always_zero_bits;
+    if ((unsigned)exponent <= leading_mantissa_zeroes) {
+        extractor.mantissa <<= exponent;
+        return extractor.to_float();
+    }
+
+    // Denormal is shifted far enough to become non-denormal.
+    int new_exponent = exponent - leading_mantissa_zeroes;
+    if (new_exponent >= (int)Extractor::exponent_max) {
+        extractor.mantissa = 0;
+        extractor.exponent = Extractor::exponent_max;
+        return extractor.to_float();
+    }
+
+    extractor.mantissa <<= (leading_mantissa_zeroes + 1);
+    extractor.exponent = new_exponent;
 
     return extractor.to_float();
 }

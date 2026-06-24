@@ -10,6 +10,7 @@
 #include <Kernel/Bus/PCI/Definitions.h>
 #include <Kernel/Bus/PCI/Device.h>
 #include <Kernel/Bus/USB/xHCI/xHCIController.h>
+#include <Kernel/Interrupts/PCIIRQHandler.h>
 
 namespace Kernel::USB::xHCI {
 
@@ -28,7 +29,7 @@ private:
 
     // ^xHCIController
     virtual bool using_message_signalled_interrupts() const override { return m_using_message_signalled_interrupts; }
-    virtual ErrorOr<OwnPtr<GenericInterruptHandler>> create_interrupter(u16 interrupter_id) override;
+    virtual ErrorOr<NonnullOwnPtr<xHCIInterrupter>> create_interrupter(u16 interrupter_id) override;
     virtual ErrorOr<void> write_dmesgln_prefix(StringBuilder& builder) const override
     {
         TRY(builder.try_appendff("{}: {}: "sv, device_name(), device_identifier().address()));
@@ -43,6 +44,20 @@ private:
     static constexpr PCI::RegisterOffset intel_xhci_usb3_port_routing_mask_offset = static_cast<PCI::RegisterOffset>(0xDC);
 
     bool m_using_message_signalled_interrupts { false };
+};
+
+class xHCIPCIInterrupter final
+    : public xHCIInterrupter
+    , public PCI::IRQHandler {
+public:
+    static ErrorOr<NonnullOwnPtr<xHCIPCIInterrupter>> create(PCIxHCIController&, u16 interrupter_id);
+
+    virtual StringView purpose() const override { return "xHCI Interrupter"sv; }
+
+private:
+    xHCIPCIInterrupter(PCIxHCIController& controller, u16 interrupter_id, InterruptNumber irq);
+
+    virtual bool handle_irq() override;
 };
 
 }

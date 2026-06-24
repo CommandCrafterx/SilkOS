@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <AK/GenericShorthands.h>
 #include <AK/ScopeGuard.h>
 #include <AK/Singleton.h>
 #include <AK/StringBuilder.h>
@@ -113,6 +114,12 @@ Thread::BlockResult Thread::block_impl(BlockTimeout const& timeout, Blocker& blo
     ScopedCritical critical;
 
     SpinlockLocker scheduler_lock(g_scheduler_lock);
+
+    // Don't let signals unblock threads that are blocked inside a page fault handler.
+    // This prevents threads from EINTR'ing the inode read in an inode page fault.
+    // FIXME: There's probably a better way to solve this.
+    if (has_unmasked_pending_signals() && !is_handling_page_fault())
+        return BlockResult::InterruptedBySignal;
 
     SpinlockLocker block_lock(m_block_lock);
     // We need to hold m_block_lock so that nobody can unblock a blocker as soon
@@ -648,8 +655,6 @@ u32 Thread::pending_signals_for_state() const
 {
     VERIFY(g_scheduler_lock.is_locked_by_current_processor());
     constexpr u32 stopped_signal_mask = (1 << (SIGCONT - 1)) | (1 << (SIGKILL - 1)) | (1 << (SIGTRAP - 1));
-    if (is_handling_page_fault())
-        return 0;
     return m_state != State::Stopped ? m_pending_signals : m_pending_signals & stopped_signal_mask;
 }
 
@@ -665,11 +670,28 @@ void Thread::send_signal(u8 signal, [[maybe_unused]] Process* sender)
         return;
     }
 
+    // https://pubs.opengroup.org/onlinepubs/9799919799/functions/V2_chap02.html#tag_16_04_01
+    // "When any stop signal (SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU) is generated for a process or thread, all pending SIGCONT signals for that process or any of the threads within that process shall be discarded."
+    if (first_is_one_of(signal, SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU)) {
+        process().for_each_thread([](Thread& thread) {
+            thread.m_pending_signals &= ~(1 << (SIGCONT - 1));
+        });
+    }
+
+    // https://pubs.opengroup.org/onlinepubs/9799919799/functions/V2_chap02.html#tag_16_04_01
+    // "Conversely, when SIGCONT is generated for a process or thread, all pending stop signals for that process or any of the threads within that process shall be discarded."
+    if (signal == SIGCONT) {
+        process().for_each_thread([](Thread& thread) {
+            static constexpr u32 STOP_SIGNAL_MASK = (1 << (SIGSTOP - 1)) | (1 << (SIGTSTP - 1)) | (1 << (SIGTTIN - 1)) | (1 << (SIGTTOU - 1));
+            thread.m_pending_signals &= ~STOP_SIGNAL_MASK;
+        });
+    }
+
     if constexpr (SIGNAL_DEBUG) {
         if (sender)
             dbgln("Signal: {} sent {} to {}", *sender, signal, process());
         else
-            dbgln("Signal: Kernel send {} to {}", signal, process());
+            dbgln("Signal: Kernel sent {} to {}", signal, process());
     }
 
     m_pending_signals |= 1 << (signal - 1);
@@ -882,7 +904,7 @@ DispatchSignalResult Thread::dispatch_signal(u8 signal)
     VERIFY(process().is_user_process());
     VERIFY(this == Thread::current());
 
-    dbgln_if(SIGNAL_DEBUG, "Dispatch signal {} to {}, state: {}", signal, *this, state_string());
+    dbgln_if(SIGNAL_DEBUG, "Dispatch signal {} to {}", signal, *this);
 
     if (m_state == Thread::State::Invalid || !is_initialized()) {
         // Thread has barely been created, we need to wait until it is

@@ -7,21 +7,18 @@
 #pragma once
 
 #include <AK/ByteString.h>
-#include <AK/Demangle.h>
 #include <AK/Function.h>
 #include <AK/HashMap.h>
-#include <AK/NonnullRefPtr.h>
 #include <AK/Optional.h>
 #include <AK/OwnPtr.h>
+#include <AK/StackUnwinder.h>
 #include <LibCore/MappedFile.h>
 #include <LibDebug/DebugInfo.h>
 #include <LibDebug/ProcessInspector.h>
 #include <signal.h>
-#include <stdio.h>
 #include <sys/arch/regs.h>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
-#include <unistd.h>
 
 namespace Debug {
 
@@ -80,10 +77,10 @@ public:
     struct WatchPoint {
         FlatPtr address { 0 };
         u32 debug_register_index { 0 };
-        u32 ebp { 0 };
+        FlatPtr frame_pointer { 0 };
     };
 
-    bool insert_watchpoint(FlatPtr address, u32 ebp);
+    bool insert_watchpoint(FlatPtr address, FlatPtr frame_pointer);
     bool remove_watchpoint(FlatPtr address);
     bool disable_watchpoint(FlatPtr address);
     bool watchpoint_exists(FlatPtr address) const;
@@ -199,15 +196,7 @@ void DebugSession::run(DesiredInitialDebugeeState initial_debugee_state, Callbac
 
         auto regs = get_registers();
 
-#if ARCH(X86_64)
-        FlatPtr current_instruction = regs.rip;
-#elif ARCH(AARCH64)
-        FlatPtr current_instruction = regs.pc;
-#elif ARCH(RISCV64)
-        FlatPtr current_instruction = regs.pc;
-#else
-#    error Unknown architecture
-#endif
+        FlatPtr current_instruction = regs.ip();
 
         auto debug_status = peek_debug(DEBUG_STATUS_REGISTER);
         if (debug_status.has_value() && (debug_status.value() & 0b1111) > 0) {
@@ -221,34 +210,25 @@ void DebugSession::run(DesiredInitialDebugeeState initial_debugee_state, Callbac
                 break;
             }
             if (watchpoint.has_value()) {
-                auto required_ebp = watchpoint.value().ebp;
-                auto found_ebp = false;
+                auto required_frame_pointer = watchpoint.value().frame_pointer;
+                auto found_frame_pointer = false;
 
-#if ARCH(X86_64)
-                FlatPtr current_ebp = regs.rbp;
-#elif ARCH(AARCH64)
-                FlatPtr current_ebp = regs.bp();
-#elif ARCH(RISCV64)
-                FlatPtr current_ebp = regs.bp();
-#else
-#    error Unknown architecture
-#endif
+                MUST(AK::unwind_stack_from_frame_pointer(
+                    regs.bp(),
+                    [this](FlatPtr addr) -> ErrorOr<FlatPtr> {
+                        auto value = this->peek(addr);
+                        return value.has_value() ? value.release_value() : ErrorOr<FlatPtr>(Error::from_errno(EFAULT));
+                    },
+                    [required_frame_pointer, &current_instruction, &found_frame_pointer](AK::StackFrame frame) -> ErrorOr<IterationDecision> {
+                        if (frame.previous_frame_pointer == required_frame_pointer) {
+                            found_frame_pointer = true;
+                            return IterationDecision::Break;
+                        }
+                        current_instruction = frame.return_address;
+                        return IterationDecision::Continue;
+                    }));
 
-                // FIXME: Use AK::unwind_stack_from_frame_pointer
-                do {
-                    if (current_ebp == required_ebp) {
-                        found_ebp = true;
-                        break;
-                    }
-                    auto return_address = peek(current_ebp + sizeof(FlatPtr));
-                    auto next_ebp = peek(current_ebp);
-                    VERIFY(return_address.has_value());
-                    VERIFY(next_ebp.has_value());
-                    current_instruction = return_address.value();
-                    current_ebp = next_ebp.value();
-                } while (current_ebp && current_instruction);
-
-                if (!found_ebp) {
+                if (!found_frame_pointer) {
                     dbgln("Removing watchpoint at {:p} because it went out of scope!", watchpoint.value().address);
                     remove_watchpoint(watchpoint.value().address);
                     continue;
@@ -272,18 +252,10 @@ void DebugSession::run(DesiredInitialDebugeeState initial_debugee_state, Callbac
             // 1. Set pc to point at the actual address of the instruction we broke on.
             //    pc currently points to the instruction after the original instruction.
             // 2. We restore the original instruction, because it was patched with a breakpoint instruction.
-            auto breakpoint_addr = bit_cast<FlatPtr>(current_breakpoint.value().address);
-#if ARCH(X86_64)
-            regs.rip = breakpoint_addr;
-#elif ARCH(AARCH64)
-            regs.pc = breakpoint_addr;
-#elif ARCH(RISCV64)
-            regs.pc = breakpoint_addr;
-#else
-#    error Unknown architecture
-#endif
+            auto breakpoint_address = current_breakpoint.value().address;
+            regs.set_ip(breakpoint_address);
             set_registers(regs);
-            disable_breakpoint(current_breakpoint.value().address);
+            disable_breakpoint(breakpoint_address);
         }
 
         DebugBreakReason reason = (state == State::Syscall && !current_breakpoint.has_value()) ? DebugBreakReason::Syscall : DebugBreakReason::Breakpoint;

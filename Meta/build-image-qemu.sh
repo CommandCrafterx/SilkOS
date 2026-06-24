@@ -148,12 +148,12 @@ fi
 
 cleanup() {
     if [ -d mnt ]; then
-        if [ $use_genext2fs = 0 ] ; then
+        if [ $use_genext2fs = 0 ]; then
             printf "unmounting filesystem... "
-            if [ $USE_FUSE2FS -eq 1 ]; then
+            if [ $USE_FUSE2FS -eq 1 ] && command -v fusermount >/dev/null 2>&1; then
                 fusermount -u mnt || (sleep 1 && sync && fusermount -u mnt)
             else
-                umount mnt || ( sleep 1 && sync && umount mnt )
+                umount mnt || (sleep 1 && sync && umount mnt)
             fi
         fi
         rm -rf mnt
@@ -169,7 +169,7 @@ cleanup() {
 trap cleanup EXIT
 
 script_path=$(cd -P -- "$(dirname -- "$0")" && pwd -P)
-"$script_path/build-root-filesystem.sh"
+SERENITY_USE_GENEXT2FS=$use_genext2fs "$script_path/build-root-filesystem.sh"
 
 if [ $use_genext2fs = 1 ]; then
     genext2fs -B 4096 -b $((DISK_SIZE_BYTES / 4096)) -i "${BYTES_PER_INODE}" -d mnt _disk_image || die "try increasing image size (genext2fs -b)"

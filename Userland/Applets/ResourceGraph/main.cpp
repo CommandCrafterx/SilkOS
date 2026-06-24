@@ -8,6 +8,7 @@
 
 #include <AK/CircularQueue.h>
 #include <AK/JsonObject.h>
+#include <AK/NumberFormat.h>
 #include <LibCore/ArgsParser.h>
 #include <LibCore/System.h>
 #include <LibGUI/Application.h>
@@ -47,10 +48,10 @@ private:
         case GraphType::CPU: {
             u64 total, idle;
             if (get_cpu_usage(total, idle)) {
-                auto total_diff = total - m_last_total;
-                m_last_total = total;
-                auto idle_diff = idle - m_last_idle;
-                m_last_idle = idle;
+                auto total_diff = total - m_cpu_last_total;
+                m_cpu_last_total = total;
+                auto idle_diff = idle - m_cpu_last_idle;
+                m_cpu_last_idle = idle;
                 float cpu = total_diff > 0 ? (float)(total_diff - idle_diff) / (float)total_diff : 0;
                 m_history.enqueue(cpu);
                 m_tooltip = MUST(String::formatted("CPU usage: {:.1}%", 100 * cpu));
@@ -74,18 +75,20 @@ private:
             break;
         }
         case GraphType::Network: {
-            u64 tx, rx, link_speed;
-            if (get_network_usage(tx, rx, link_speed)) {
-                u64 recent_tx = tx - m_last_total;
-                m_last_total = tx;
-                if (recent_tx > m_current_scale) {
+            u64 tx {}, rx {};
+            if (get_network_usage(tx, rx)) {
+                u64 recent_rx = rx - m_network_last_rx;
+                m_network_last_rx = rx;
+                u64 recent_tx = tx - m_network_last_tx;
+                m_network_last_tx = tx;
+                if (recent_rx > m_current_scale) {
                     u64 m_old_scale = m_current_scale;
                     // Scale in multiples of 1000 kB/s
-                    m_current_scale = (recent_tx / scale_unit) * scale_unit;
+                    m_current_scale = (recent_rx / scale_unit) * scale_unit;
                     rescale_history(m_old_scale, m_current_scale);
                 } else {
                     // Figure out if we can scale back down.
-                    float max = static_cast<float>(recent_tx) / static_cast<float>(m_current_scale);
+                    float max = static_cast<float>(recent_rx) / static_cast<float>(m_current_scale);
                     for (auto const value : m_history) {
                         if (value > max)
                             max = value;
@@ -96,8 +99,8 @@ private:
                         rescale_history(m_old_scale, m_current_scale);
                     }
                 }
-                m_history.enqueue(static_cast<float>(recent_tx) / static_cast<float>(m_current_scale));
-                m_tooltip = MUST(String::formatted("Network: TX {} / RX {} ({:.1} kbit/s)", tx, rx, static_cast<double>(recent_tx) * 8.0 / 1000.0));
+                m_history.enqueue(static_cast<float>(recent_rx) / static_cast<float>(m_current_scale));
+                m_tooltip = MUST(String::formatted("Network: Receiving {}/s - Sending {}/s", human_readable_size(recent_rx), human_readable_size(recent_tx)));
             } else {
                 m_history.enqueue(-1);
                 m_tooltip = "Unable to determine network usage"_string;
@@ -191,9 +194,9 @@ private:
         return true;
     }
 
-    bool get_network_usage(u64& tx, u64& rx, u64& link_speed)
+    bool get_network_usage(u64& tx, u64& rx)
     {
-        tx = rx = link_speed = 0;
+        tx = rx = 0;
 
         auto json = get_data_as_json(m_proc_net, "/sys/kernel/net/adapters"sv);
         if (json.is_error())
@@ -205,12 +208,9 @@ private:
             if (!adapter_obj.has_string("ipv4_address"sv) || !adapter_obj.get_bool("link_up"sv).value())
                 continue;
 
-            tx += adapter_obj.get_u64("bytes_in"sv).value_or(0);
-            rx += adapter_obj.get_u64("bytes_out"sv).value_or(0);
-            // Link speed data is given in megabits, but we want all return values to be in bytes.
-            link_speed += adapter_obj.get_u64("link_speed"sv).value_or(0) * 8'000'000;
+            rx += adapter_obj.get_u64("bytes_in"sv).value_or(0);
+            tx += adapter_obj.get_u64("bytes_out"sv).value_or(0);
         }
-        link_speed /= 8;
         return tx != 0;
     }
 
@@ -225,8 +225,13 @@ private:
     Gfx::Color m_graph_color;
     Gfx::Color m_graph_error_color;
     CircularQueue<float, history_size> m_history;
-    u64 m_last_idle { 0 };
-    u64 m_last_total { 0 };
+
+    u64 m_cpu_last_idle { 0 };
+    u64 m_cpu_last_total { 0 };
+
+    u64 m_network_last_rx { 0 };
+    u64 m_network_last_tx { 0 };
+
     static constexpr u64 const scale_unit = 8000;
     u64 m_current_scale { scale_unit };
     String m_tooltip;

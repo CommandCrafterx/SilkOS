@@ -36,7 +36,6 @@ set(KERNEL_SOURCES
     Bus/USB/xHCI/DeviceTreexHCIController.cpp
     Bus/USB/xHCI/PCIxHCIController.cpp
     Bus/USB/xHCI/xHCIController.cpp
-    Bus/USB/xHCI/xHCIInterrupter.cpp
     Bus/USB/xHCI/xHCIRootHub.cpp
     Bus/USB/Drivers/HID.cpp
     Bus/USB/Drivers/MassStorage/MassStorageDriver.cpp
@@ -484,7 +483,8 @@ elseif("${SERENITY_ARCH}" STREQUAL "aarch64")
         Arch/aarch64/RPi/InterruptController.cpp
         Arch/aarch64/RPi/Mailbox.cpp
         Arch/aarch64/RPi/MiniUART.cpp
-        Arch/aarch64/RPi/RP1.cpp
+        Arch/aarch64/RPi/RP1/RP1.cpp
+        Arch/aarch64/RPi/RP1/xHCI.cpp
         Arch/aarch64/RPi/SDHostController.cpp
         Arch/aarch64/RPi/Timer.cpp
         Arch/aarch64/RPi/Watchdog.cpp

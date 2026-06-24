@@ -555,7 +555,7 @@ ErrorOr<void> SSHClient::send_channel_open_confirmation(Session const& session)
     TRY(stream.write_value<NetworkOrdered<u32>>(session.sender_channel_id));
     TRY(stream.write_value<NetworkOrdered<u32>>(session.local_channel_id));
 
-    TRY(stream.write_value<NetworkOrdered<u32>>(session.window_size));
+    TRY(stream.write_value<NetworkOrdered<u32>>(session.initial_window_size));
     TRY(stream.write_value<NetworkOrdered<u32>>(session.maximum_packet_size));
 
     TRY(write_packet(TRY(stream.read_until_eof())));
@@ -619,6 +619,11 @@ ErrorOr<void> SSHClient::handle_channel_data(GenericMessage& message)
         return Error::from_string_literal("Received channel data after EOF");
 
     session.channel_data.append(data);
+    session.total_received_bytes += data.size();
+
+    // FIXME: Try to tune this logic, there is probably some performance to gain here.
+    if (session.local_window_size - session.total_received_bytes < session.initial_window_size / 2)
+        TRY(send_channel_window_adjust_message(session));
 
     // FIXME: Make sure to cancel this coroutine if anything goes wrong.
     if (!session.has_streaming_coroutine)
@@ -753,16 +758,31 @@ ErrorOr<void> SSHClient::send_channel_success_message(Session const& session)
     return {};
 }
 
+static ErrorOr<void> for_each_part(ReadonlyBytes data, u32 part_size, auto callback)
+{
+    do {
+        auto part = data.trim(part_size);
+
+        TRY(callback(part));
+
+        data = data.slice(part.size());
+    } while (!data.is_empty());
+
+    return {};
+}
+
 // 5.2. Data Transfer
 // https://datatracker.ietf.org/doc/html/rfc4254#section-5.2
 ErrorOr<void> SSHClient::send_channel_data(Session const& session, ReadonlyBytes data)
 {
-    AllocatingMemoryStream stream;
-    TRY(stream.write_value(MessageID::CHANNEL_DATA));
-    TRY(stream.write_value<NetworkOrdered<u32>>(session.local_channel_id));
-    TRY(encode_string(stream, data));
-    TRY(write_packet(TRY(stream.read_until_eof())));
-    return {};
+    return for_each_part(data, session.maximum_packet_size, [&](ReadonlyBytes part) -> ErrorOr<void> {
+        AllocatingMemoryStream stream;
+        TRY(stream.write_value(MessageID::CHANNEL_DATA));
+        TRY(stream.write_value<NetworkOrdered<u32>>(session.local_channel_id));
+        TRY(encode_string(stream, part));
+        TRY(write_packet(TRY(stream.read_until_eof())));
+        return {};
+    });
 }
 
 // 5.2. Data Transfer
@@ -778,13 +798,15 @@ ErrorOr<void> SSHClient::send_channel_extended_data(Session const& session, Read
 
     static constexpr u32 EXTENDED_DATA_STDERR = 1;
 
-    AllocatingMemoryStream stream;
-    TRY(stream.write_value(MessageID::CHANNEL_EXTENDED_DATA));
-    TRY(stream.write_value<NetworkOrdered<u32>>(session.local_channel_id));
-    TRY(stream.write_value<NetworkOrdered<u32>>(EXTENDED_DATA_STDERR));
-    TRY(encode_string(stream, data));
-    TRY(write_packet(TRY(stream.read_until_eof())));
-    return {};
+    return for_each_part(data, session.maximum_packet_size, [&](ReadonlyBytes part) -> ErrorOr<void> {
+        AllocatingMemoryStream stream;
+        TRY(stream.write_value(MessageID::CHANNEL_EXTENDED_DATA));
+        TRY(stream.write_value<NetworkOrdered<u32>>(session.local_channel_id));
+        TRY(stream.write_value<NetworkOrdered<u32>>(EXTENDED_DATA_STDERR));
+        TRY(encode_string(stream, part));
+        TRY(write_packet(TRY(stream.read_until_eof())));
+        return {};
+    });
 }
 
 ErrorOr<void> SSHClient::handle_channel_eof(GenericMessage& message)
@@ -807,10 +829,30 @@ ErrorOr<void> SSHClient::handle_channel_eof(GenericMessage& message)
     return {};
 }
 
-ErrorOr<void> SSHClient::handle_channel_window_adjust_message(GenericMessage&)
+// 5.2.  Data Transfer
+// https://datatracker.ietf.org/doc/html/rfc4254#section-5.2
+ErrorOr<void> SSHClient::handle_channel_window_adjust_message(GenericMessage& message)
 {
+    [[maybe_unused]] auto recipient_channel_id = TRY(message.payload.read_value<NetworkOrdered<u32>>());
+    [[maybe_unused]] auto bytes_to_add = TRY(message.payload.read_value<NetworkOrdered<u32>>());
+
     // FIXME: Actually support this packet and don't spam the client without
     //        respecting its window size.
+    return {};
+}
+
+// 5.2.  Data Transfer
+// https://datatracker.ietf.org/doc/html/rfc4254#section-5.2
+ErrorOr<void> SSHClient::send_channel_window_adjust_message(Session& session)
+{
+    session.local_window_size += session.initial_window_size;
+
+    AllocatingMemoryStream stream;
+    TRY(stream.write_value(MessageID::CHANNEL_WINDOW_ADJUST));
+    TRY(stream.write_value<NetworkOrdered<u32>>(session.sender_channel_id));
+    TRY(stream.write_value<NetworkOrdered<u32>>(session.initial_window_size));
+    TRY(write_packet(TRY(stream.read_until_eof())));
+
     return {};
 }
 
