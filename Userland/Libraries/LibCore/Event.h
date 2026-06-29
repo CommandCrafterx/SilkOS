@@ -7,11 +7,9 @@
 
 #pragma once
 
-#include <AK/EnumBits.h>
 #include <AK/Function.h>
 #include <AK/Types.h>
 #include <AK/WeakPtr.h>
-#include <LibCore/DeferredInvocationContext.h>
 #include <LibCore/Forward.h>
 
 namespace Core {
@@ -47,23 +45,6 @@ private:
     bool m_accepted { true };
 };
 
-class DeferredInvocationEvent : public Event {
-    friend class EventLoop;
-    friend class ThreadEventQueue;
-
-public:
-    DeferredInvocationEvent(NonnullRefPtr<DeferredInvocationContext> context, Function<void()> invokee)
-        : Event(Event::Type::DeferredInvoke)
-        , m_context(move(context))
-        , m_invokee(move(invokee))
-    {
-    }
-
-private:
-    NonnullRefPtr<DeferredInvocationContext> m_context;
-    Function<void()> m_invokee;
-};
-
 class TimerEvent final : public Event {
 public:
     explicit TimerEvent()
@@ -74,32 +55,13 @@ public:
     ~TimerEvent() = default;
 };
 
-enum class NotificationType {
-    None = 0,
-    Read = 1,
-    Write = 2,
-    HangUp = 4,
-    Error = 8,
-};
-
-AK_ENUM_BITWISE_OPERATORS(NotificationType);
-
 class NotifierActivationEvent final : public Event {
 public:
-    explicit NotifierActivationEvent(int fd, NotificationType type)
+    explicit NotifierActivationEvent()
         : Event(Event::NotifierActivation)
-        , m_fd(fd)
-        , m_type(type)
     {
     }
     ~NotifierActivationEvent() = default;
-
-    int fd() const { return m_fd; }
-    NotificationType type() const { return m_type; }
-
-private:
-    int m_fd;
-    NotificationType m_type;
 };
 
 class ChildEvent final : public Event {

@@ -9,8 +9,6 @@
 
 namespace Test {
 
-static auto s_deferred_context = Core::DeferredInvocationContext::construct();
-
 struct Spinner {
     Spinner(std::coroutine_handle<>& awaiter)
         : m_awaiter(awaiter)
@@ -23,11 +21,9 @@ struct Spinner {
     void await_suspend(std::coroutine_handle<> awaiter)
     {
         m_awaiter = awaiter;
-        Core::ThreadEventQueue::current().post_event(
-            s_deferred_context,
-            make<Core::DeferredInvocationEvent>(s_deferred_context, [&] {
-                m_awaiter.resume();
-            }));
+        Core::ThreadEventQueue::current().deferred_invoke([&] {
+            m_awaiter.resume();
+        });
     }
 
     void await_resume() { m_awaiter = {}; }

@@ -271,7 +271,8 @@ bool E1000NetworkAdapter::handle_irq()
         receive();
     }
 
-    m_wait_queue.wake_all();
+    // There is at most one waiter as the wait queue itself is behind the mutex.
+    m_wait_queue.notify_one();
 
     out32(REG_INTERRUPT_CAUSE_READ, 0xffffffff);
     return true;
@@ -353,6 +354,7 @@ UNMAP_AFTER_INIT void E1000NetworkAdapter::initialize_tx_descriptors()
         m_tx_buffers[i] = m_tx_buffer_region->vaddr().as_ptr() + tx_buffer_size * i;
         descriptor.addr = m_tx_buffer_region->physical_page(tx_buffer_page_count * i)->paddr().get();
         descriptor.cmd = 0;
+        descriptor.status = TSTA_DD;
     }
 
     out32(REG_TXDESCLO, m_tx_descriptors.paddr.get());
@@ -365,34 +367,10 @@ UNMAP_AFTER_INIT void E1000NetworkAdapter::initialize_tx_descriptors()
     out32(REG_TIPG, 0x0060200A);
 }
 
-void E1000NetworkAdapter::out8(u16 address, u8 data)
-{
-    dbgln_if(E1000_DEBUG, "E1000: OUT8 {:#02x} @ {:#04x}", data, address);
-    m_registers_io_window->write8(address, data);
-}
-
-void E1000NetworkAdapter::out16(u16 address, u16 data)
-{
-    dbgln_if(E1000_DEBUG, "E1000: OUT16 {:#04x} @ {:#04x}", data, address);
-    m_registers_io_window->write16(address, data);
-}
-
 void E1000NetworkAdapter::out32(u16 address, u32 data)
 {
     dbgln_if(E1000_DEBUG, "E1000: OUT32 {:#08x} @ {:#04x}", data, address);
     m_registers_io_window->write32(address, data);
-}
-
-u8 E1000NetworkAdapter::in8(u16 address)
-{
-    dbgln_if(E1000_DEBUG, "E1000: IN8 @ {:#04x}", address);
-    return m_registers_io_window->read8(address);
-}
-
-u16 E1000NetworkAdapter::in16(u16 address)
-{
-    dbgln_if(E1000_DEBUG, "E1000: IN16 @ {:#04x}", address);
-    return m_registers_io_window->read16(address);
 }
 
 u32 E1000NetworkAdapter::in32(u16 address)
@@ -403,10 +381,21 @@ u32 E1000NetworkAdapter::in32(u16 address)
 
 void E1000NetworkAdapter::send_raw(ReadonlyBytes payload)
 {
-    disable_irq();
+    MutexLocker locker { m_write_lock };
+
     size_t tx_current = in32(REG_TXDESCTAIL) % number_of_tx_descriptors;
     dbgln_if(E1000_DEBUG, "E1000: Sending packet ({} bytes)", payload.size());
     auto& descriptor = m_tx_descriptors[tx_current];
+
+    if (descriptor.status == 0) {
+        // Someone is still using the descriptor, let's wait until it's free.
+        Spinlock<LockRank::None> dummy;
+        m_wait_queue.wait_until(dummy, [&descriptor]() {
+                        return descriptor.status == 0;
+                    })
+            .release_value_but_fixme_should_propagate_errors();
+    }
+
     VERIFY(payload.size() <= 8192);
     auto* vptr = (void*)m_tx_buffers[tx_current];
     memcpy(vptr, payload.data(), payload.size());
@@ -415,16 +404,8 @@ void E1000NetworkAdapter::send_raw(ReadonlyBytes payload)
     descriptor.cmd = CMD_EOP | CMD_IFCS | CMD_RS;
     dbgln_if(E1000_DEBUG, "E1000: Using tx descriptor {} (head is at {})", tx_current, in32(REG_TXDESCHEAD));
     tx_current = (tx_current + 1) % number_of_tx_descriptors;
-    Processor::disable_interrupts();
-    enable_irq();
     out32(REG_TXDESCTAIL, tx_current);
-    for (;;) {
-        if (descriptor.status) {
-            Processor::enable_interrupts();
-            break;
-        }
-        m_wait_queue.wait_forever("E1000NetworkAdapter"sv);
-    }
+
     dbgln_if(E1000_DEBUG, "E1000: Sent packet, status is now {:#02x}!", (u8)descriptor.status);
 }
 
