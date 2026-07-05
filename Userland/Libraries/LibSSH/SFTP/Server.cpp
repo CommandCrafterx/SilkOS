@@ -32,12 +32,16 @@ Coroutine<ErrorOr<void>> Server::handle_channel_data(Session& session)
         CO_TRY(handle_packet(stream));
     }
 
+    if (session.has_received_eof)
+        m_is_ready_to_be_closed = true;
+
     co_return {};
 }
 
-void Server::handle_channel_eof(Session const&)
+void Server::handle_channel_eof(Session const& session)
 {
-    // There is nothing to do here.
+    if (session.channel_data.is_empty())
+        m_is_ready_to_be_closed = true;
 }
 
 // 4. Protocol Initialization
@@ -89,6 +93,8 @@ ErrorOr<void> Server::handle_packet(FixedMemoryStream& stream)
         return handle_stat(stream, StatType::LStat);
     case FXPMessageID::WRITE:
         return handle_write(stream);
+    case FXPMessageID::CLOSE:
+        return handle_close(stream);
     default:
         dbgln_if(SSH_DEBUG, "Received packet with type: {}", to_underlying(type));
         return Error::from_string_literal("Unknown packet type");
@@ -248,6 +254,17 @@ ErrorOr<void> Server::send_file_handle(u32 id, File const& file)
     auto packet = TRY(stream.read_until_eof());
     TRY(write_packet(packet));
     return {};
+}
+
+ErrorOr<void> Server::handle_close(FixedMemoryStream& stream)
+{
+    u32 id = TRY(stream.read_value<NetworkOrdered<u32>>());
+    auto handle = TRY(decode_string(stream));
+
+    if (m_open_files.remove_first_matching([&](auto const& file) { return file.handle.bytes() == handle; }))
+        return send_status_message(id, FXStatus::OK);
+
+    return send_status_message(id, FXStatus::FAILURE);
 }
 
 ErrorOr<Server::File*> Server::find_file(ReadonlyBytes handle)

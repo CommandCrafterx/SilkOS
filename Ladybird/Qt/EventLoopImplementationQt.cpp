@@ -206,7 +206,7 @@ void EventLoopImplementationQt::wake()
         m_event_loop.wakeUp();
 }
 
-void EventLoopImplementationQt::post_event(Core::EventReceiver& receiver, NonnullOwnPtr<Core::Event>&& event)
+void EventLoopImplementationQt::post_event(Core::EventReceiver* receiver, NonnullOwnPtr<Core::Event>&& event)
 {
     m_thread_event_queue.post_event(receiver, move(event));
     if (&m_thread_event_queue != &Core::ThreadEventQueue::current())
@@ -256,7 +256,7 @@ void EventLoopManagerQt::unregister_timer(intptr_t timer_id)
 
 static void qt_notifier_activated(Core::Notifier& notifier)
 {
-    Core::NotifierActivationEvent event(notifier.fd(), notifier.type());
+    Core::NotifierActivationEvent event;
     notifier.dispatch_event(event);
 }
 

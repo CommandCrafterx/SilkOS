@@ -6,8 +6,10 @@
 
 #pragma once
 
+#include <AK/Function.h>
 #include <AK/NonnullOwnPtr.h>
 #include <AK/OwnPtr.h>
+#include <LibCore/Forward.h>
 
 namespace Core {
 
@@ -19,13 +21,16 @@ class ThreadEventQueue {
     AK_MAKE_NONMOVABLE(ThreadEventQueue);
 
 public:
+    static ThreadEventQueue* current_or_null();
     static ThreadEventQueue& current();
 
     // Process all queued events. Returns the number of events that were processed.
     size_t process();
 
     // Posts an event to the event queue.
-    void post_event(EventReceiver& receiver, NonnullOwnPtr<Event>);
+    void post_event(EventReceiver*, NonnullOwnPtr<Event>);
+    void post_event(EventReceiver*, Core::Event::Type);
+    void deferred_invoke(Function<void()>&&);
 
     // Used by Threading::BackgroundAction.
     void add_job(NonnullRefPtr<Promise<NonnullRefPtr<EventReceiver>>>);

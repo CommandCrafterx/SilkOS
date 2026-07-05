@@ -5,6 +5,7 @@
  */
 
 #include <AK/Assertions.h>
+#include <AK/Atomic.h>
 #include <AK/IDAllocator.h>
 #include <AK/Singleton.h>
 #include <AK/TemporaryChange.h>
@@ -201,6 +202,38 @@ static void post_application_event()
     [NSApp postEvent:event atStart:NO];
 }
 
+struct CFEventLoopImplementation::Impl {
+    Impl(CFEventLoopImplementation& event_loop_implementation)
+        : run_loop(CFRunLoopGetCurrent())
+    {
+        CFRunLoopSourceContext context {};
+        context.info = &event_loop_implementation;
+        context.perform = [](void* info) {
+            auto& self = *static_cast<CFEventLoopImplementation*>(info);
+            self.m_thread_event_queue.process();
+        };
+
+        deferred_source = CFRunLoopSourceCreate(kCFAllocatorDefault, 0, &context);
+        CFRunLoopAddSource(run_loop, deferred_source, kCFRunLoopCommonModes);
+    }
+
+    ~Impl()
+    {
+        CFRunLoopRemoveSource(run_loop, deferred_source, kCFRunLoopCommonModes);
+        CFRelease(deferred_source);
+    }
+
+    CFRunLoopRef run_loop { nullptr };
+    CFRunLoopSourceRef deferred_source { nullptr };
+};
+
+CFEventLoopImplementation::CFEventLoopImplementation()
+    : m_impl(make<Impl>(*this))
+{
+}
+
+CFEventLoopImplementation::~CFEventLoopImplementation() = default;
+
 NonnullOwnPtr<Core::EventLoopImplementation> CFEventLoopManager::make_implementation()
 {
     return CFEventLoopImplementation::create();
@@ -261,7 +294,7 @@ static void socket_notifier(CFSocketRef socket, CFSocketCallBackType notificatio
     // before dispatching the event, which allows it to be triggered again.
     CFSocketEnableCallBacks(socket, notification_type);
 
-    Core::NotifierActivationEvent event(notifier.fd(), notifier.type());
+    Core::NotifierActivationEvent event;
     notifier.dispatch_event(event);
 
     // This manual process of enabling the callbacks also seems to require waking the event loop,
@@ -294,7 +327,7 @@ void CFEventLoopManager::register_notifier(Core::Notifier& notifier)
     CFSocketSetSocketFlags(socket, sockopt);
 
     auto* source = CFSocketCreateRunLoopSource(kCFAllocatorDefault, socket, 0);
-    CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopDefaultMode);
+    CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
 
     CFRelease(socket);
 
@@ -304,14 +337,14 @@ void CFEventLoopManager::register_notifier(Core::Notifier& notifier)
 void CFEventLoopManager::unregister_notifier(Core::Notifier& notifier)
 {
     if (auto source = ThreadData::the().notifiers.take(&notifier); source.has_value()) {
-        CFRunLoopRemoveSource(CFRunLoopGetCurrent(), *source, kCFRunLoopDefaultMode);
+        CFRunLoopRemoveSource(CFRunLoopGetCurrent(), *source, kCFRunLoopCommonModes);
         CFRelease(*source);
     }
 }
 
 void CFEventLoopManager::did_post_event()
 {
-    post_application_event();
+    CFRunLoopWakeUp(CFRunLoopGetCurrent());
 }
 
 static void handle_signal(CFFileDescriptorRef f, CFOptionFlags callback_types, void* info)
@@ -400,10 +433,18 @@ void CFEventLoopImplementation::quit(int exit_code)
 
 void CFEventLoopImplementation::wake()
 {
-    CFRunLoopWakeUp(CFRunLoopGetCurrent());
+    CFRunLoopWakeUp(m_impl->run_loop);
 }
 
-void CFEventLoopImplementation::post_event(Core::EventReceiver& receiver, NonnullOwnPtr<Core::Event>&& event)
+void CFEventLoopImplementation::deferred_invoke(Function<void()>&& invokee)
+{
+    EventLoopImplementation::deferred_invoke(move(invokee));
+    CFRunLoopSourceSignal(m_impl->deferred_source);
+    if (&m_thread_event_queue != &Core::ThreadEventQueue::current())
+        wake();
+}
+
+void CFEventLoopImplementation::post_event(Core::EventReceiver* receiver, NonnullOwnPtr<Core::Event>&& event)
 {
     m_thread_event_queue.post_event(receiver, move(event));
 

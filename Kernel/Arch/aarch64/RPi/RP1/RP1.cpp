@@ -4,6 +4,10 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <Kernel/Arch/aarch64/RPi/RP1/Clocks.h>
+#include <Kernel/Arch/aarch64/RPi/RP1/Fan.h>
+#include <Kernel/Arch/aarch64/RPi/RP1/GPIO.h>
+#include <Kernel/Arch/aarch64/RPi/RP1/PWM.h>
 #include <Kernel/Arch/aarch64/RPi/RP1/RP1.h>
 #include <Kernel/Arch/aarch64/RPi/RP1/xHCI.h>
 #include <Kernel/Boot/CommandLine.h>
@@ -11,7 +15,10 @@
 #include <Kernel/Bus/PCI/Driver.h>
 #include <Kernel/Bus/PCI/IDs.h>
 #include <Kernel/Bus/USB/USBManagement.h>
+#include <Kernel/Firmware/DeviceTree/DeviceTree.h>
 #include <Kernel/Library/Panic.h>
+
+// https://datasheets.raspberrypi.com/rp1/rp1-peripherals.pdf
 
 namespace Kernel::RPi {
 
@@ -46,13 +53,32 @@ ErrorOr<void> RP1::initialize()
     enable_irq();
     enable_pin_based_interrupts();
 
-    // Chapter 5. USB, https://datasheets.raspberrypi.com/rp1/rp1-peripherals.pdf
-    // The interrupt numbers are taken from the devicetree.
-    auto usbhost0 = TRY(RP1xHCIController::try_to_initialize(*this, bar1_address.offset(0x20'0000), 0, 31));
-    auto usbhost1 = TRY(RP1xHCIController::try_to_initialize(*this, bar1_address.offset(0x30'0000), 1, 36));
+    // Section 2.5. Clocks
+    auto clocks = TRY(RP1Clocks::create(*this, bar1_address.offset(0x1'8000)));
 
-    USB::USBManagement::the().add_controller(usbhost0);
-    USB::USBManagement::the().add_controller(usbhost1);
+    // Section 3.1. GPIO
+    auto gpio = TRY(RP1GPIO::create(*this, bar1_address.offset(0xd'0000)));
+
+    // Section 3.4. PWM
+    auto pwm1 = TRY(RP1PWM::create(*this, clocks, bar1_address.offset(0x9'c000), 1));
+
+    if (!kernel_command_line().disable_usb()) {
+        // Chapter 5. USB
+        // The interrupt numbers are taken from the devicetree.
+        auto usbhost0 = TRY(RP1xHCIController::try_to_initialize(*this, bar1_address.offset(0x20'0000), 0, 31));
+        auto usbhost1 = TRY(RP1xHCIController::try_to_initialize(*this, bar1_address.offset(0x30'0000), 1, 36));
+
+        USB::USBManagement::the().add_controller(usbhost0);
+        USB::USBManagement::the().add_controller(usbhost1);
+    }
+
+    auto cooling_fan_status = DeviceTree::get().resolve_property("/cooling_fan/status"sv);
+    if (cooling_fan_status.has_value() && cooling_fan_status->as_string() == "okay"sv) {
+        auto fan = TRY(RP1Fan::create(*this, gpio, pwm1));
+        TRY(fan->initialize_and_start_handler_process());
+
+        (void)fan.leak_ptr(); // Nobody owns the fan, so leak its pointer here to keep it alive.
+    }
 
     return {};
 }
@@ -109,12 +135,14 @@ PCI_DRIVER(RP1Driver);
 
 ErrorOr<void> RP1Driver::probe(PCI::DeviceIdentifier const& pci_device_identifier) const
 {
-    if (kernel_command_line().disable_usb())
-        return EPERM;
-
     if (pci_device_identifier.hardware_id().vendor_id != PCI::VendorID::RaspberryPi
         || pci_device_identifier.hardware_id().device_id != PCI::DeviceID::RaspberryPiRP1)
         return ENOTSUP;
+
+    if (!DeviceTree::get().is_compatible_with("raspberrypi,5-model-b"sv)) {
+        dbgln("RP1: Unsupported system. Only Raspberry Pi 5 is supported.");
+        return ENOTSUP;
+    }
 
     // The classes for the RP1 peripherals hold a reference to the RP1, so we can safely discard ours here.
     (void)TRY(RP1::create(pci_device_identifier));
