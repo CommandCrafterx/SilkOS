@@ -69,26 +69,26 @@ void MemoryBackedHostBridge::map_bus_region(BusNumber bus)
     if (m_mapped_bus == bus && m_mapped_bus_region)
         return;
     auto bus_base_address = determine_memory_mapped_bus_base_address(bus);
-    auto region_or_error = MM.allocate_mmio_kernel_region(bus_base_address, memory_range_per_bus, "PCI ECAM"sv, Memory::Region::Access::ReadWrite);
+    auto region_or_error = MM.allocate_mmio_kernel_region(bus_base_address, MEMORY_RANGE_PER_BUS, "PCI ECAM"sv, Memory::Region::Access::ReadWrite);
     // FIXME: Find a way to propagate error from here.
     if (region_or_error.is_error())
         VERIFY_NOT_REACHED();
     m_mapped_bus_region = region_or_error.release_value();
     m_mapped_bus = bus;
-    dbgln_if(PCI_DEBUG, "PCI: New PCI ECAM Mapped region for bus {} @ {} {}", bus, m_mapped_bus_region->vaddr(), m_mapped_bus_region->physical_page(0)->paddr());
+    dbgln_if(PCI_DEBUG, "PCI: New PCI ECAM Mapped region for bus {} @ {} {}", bus, m_mapped_bus_region->vaddr(), bus_base_address);
 }
 
 VirtualAddress MemoryBackedHostBridge::get_device_configuration_memory_mapped_space(BusNumber bus, DeviceNumber device, FunctionNumber function)
 {
     VERIFY(m_access_lock.is_locked());
     map_bus_region(bus);
-    return m_mapped_bus_region->vaddr().offset(mmio_device_space_size * function.value() + (mmio_device_space_size * to_underlying(Limits::MaxFunctionsPerDevice)) * device.value());
+    return m_mapped_bus_region->vaddr().offset(MMIO_DEVICE_SPACE_SIZE * function.value() + (MMIO_DEVICE_SPACE_SIZE * to_underlying(Limits::MaxFunctionsPerDevice)) * device.value());
 }
 
 PhysicalAddress MemoryBackedHostBridge::determine_memory_mapped_bus_base_address(BusNumber bus) const
 {
     auto start_bus = min(bus.value(), m_domain.start_bus());
-    return m_start_address.offset(memory_range_per_bus * (bus.value() - start_bus));
+    return m_start_address.offset(MEMORY_RANGE_PER_BUS * (bus.value() - start_bus));
 }
 
 }

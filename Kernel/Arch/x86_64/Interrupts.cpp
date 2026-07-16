@@ -9,11 +9,12 @@
 #include <AK/Types.h>
 
 #include <Kernel/Arch/Interrupts.h>
+#include <Kernel/Arch/x86_64/InterruptManagement.h>
 #include <Kernel/Arch/x86_64/Interrupts/PIC.h>
+#include <Kernel/Arch/x86_64/Interrupts/PICSpuriousInterruptHandler.h>
 #include <Kernel/Interrupts/GenericInterruptHandler.h>
 #include <Kernel/Interrupts/IRQHandler.h>
 #include <Kernel/Interrupts/SharedIRQHandler.h>
-#include <Kernel/Interrupts/SpuriousInterruptHandler.h>
 #include <Kernel/Interrupts/UnhandledInterruptHandler.h>
 #include <Kernel/Library/Panic.h>
 #include <Kernel/Sections.h>
@@ -47,6 +48,12 @@ READONLY_AFTER_INIT static IDTEntry s_idt[256];
 
 // This spinlock is used to reserve IRQs that can be later used by interrupt mechanism such as MSIx
 static Spinlock<LockRank::None> s_interrupt_handler_lock {};
+
+// FIXME: There is a possible race here on SMP systems. When we modify/set the interrupt handler for a specific interrupt,
+//        that change isn't immediately visible for other cores, so if that interrupt happens on another core before this
+//        change is visible, it will call the incorrect handler. Maybe some lock for each handler would be enough.
+//        But we shouldn't use a lock for CPU-local interrupts. Otherwise, that CPU-local interrupt can only happen on one
+//        core at a time. So we might need a different solution for those or possibly altogether.
 static GenericInterruptHandler* s_interrupt_handler[GENERIC_INTERRUPT_HANDLERS_COUNT];
 static GenericInterruptHandler* s_disabled_interrupt_handler[2];
 
@@ -423,17 +430,22 @@ void register_generic_interrupt_handler(InterruptNumber interrupt_number, Generi
     }
     if (!handler_slot->is_shared_handler()) {
         if (handler_slot->type() == HandlerType::SpuriousInterruptHandler) {
-            static_cast<SpuriousInterruptHandler*>(handler_slot)->register_handler(handler);
+            auto controller = InterruptManagement::the().get_responsible_irq_controller(interrupt_number);
+
+            // Only PICs should ever have spurious interrupts that are shared with real interrupts.
+            VERIFY(controller->type() == IRQControllerType::i8259);
+            static_cast<PICSpuriousInterruptHandler*>(handler_slot)->register_handler(handler);
+
             return;
         }
+
         VERIFY(handler_slot->type() == HandlerType::IRQHandler);
-        static_cast<IRQHandler*>(handler_slot)->set_shared_with_others(true);
         auto& previous_handler = *handler_slot;
-        handler_slot = nullptr;
-        SharedIRQHandler::initialize(interrupt_number);
-        VERIFY(handler_slot);
-        static_cast<SharedIRQHandler*>(handler_slot)->register_handler(previous_handler);
-        static_cast<SharedIRQHandler*>(handler_slot)->register_handler(handler);
+
+        auto* shared_handler = SharedIRQHandler::initialize(interrupt_number, previous_handler, handler);
+        handler_slot = shared_handler;
+        VERIFY(handler_slot->type() == HandlerType::SharedIRQHandler);
+
         return;
     }
     VERIFY_NOT_REACHED();

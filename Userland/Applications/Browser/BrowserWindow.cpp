@@ -91,7 +91,7 @@ BrowserWindow::BrowserWindow(WebView::CookieJar& cookie_jar, Vector<URL::URL> co
         tab.on_tab_close_request(tab);
     };
 
-    m_tab_widget->on_context_menu_request = [](auto& clicked_widget, const GUI::ContextMenuEvent& context_menu_event) {
+    m_tab_widget->on_context_menu_request = [](auto& clicked_widget, GUI::ContextMenuEvent const& context_menu_event) {
         auto& tab = static_cast<Browser::Tab&>(clicked_widget);
         tab.context_menu_requested(context_menu_event.screen_position());
     };
@@ -349,7 +349,7 @@ void BrowserWindow::build_menus(StringView const man_file)
     }
 
     settings_menu->add_separator();
-    auto open_settings_action = GUI::Action::create("Browser &Settings", Gfx::Bitmap::load_from_file("/res/icons/16x16/settings.png"sv).release_value_but_fixme_should_propagate_errors(),
+    auto open_settings_action = GUI::Action::create("Browser &Settings", MUST(Gfx::Bitmap::load_from_uri("resource://icons/16x16/settings.png"sv)),
         [this](auto&) {
             GUI::Process::spawn_or_show_error(this, "/bin/BrowserSettings"sv);
         });

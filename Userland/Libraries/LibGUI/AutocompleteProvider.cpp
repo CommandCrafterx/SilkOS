@@ -37,9 +37,9 @@ public:
         HideAutocompleteAfterApplying,
     };
 
-    virtual int row_count(const GUI::ModelIndex& = GUI::ModelIndex()) const override { return m_suggestions.size(); }
-    virtual int column_count(const GUI::ModelIndex& = GUI::ModelIndex()) const override { return Column::__Column_Count; }
-    virtual GUI::Variant data(const GUI::ModelIndex& index, GUI::ModelRole role) const override
+    virtual int row_count(GUI::ModelIndex const& = GUI::ModelIndex()) const override { return m_suggestions.size(); }
+    virtual int column_count(GUI::ModelIndex const& = GUI::ModelIndex()) const override { return Column::__Column_Count; }
+    virtual GUI::Variant data(GUI::ModelIndex const& index, GUI::ModelRole role) const override
     {
         auto& suggestion = m_suggestions.at(index.row());
         if (role == GUI::ModelRole::Display) {
@@ -52,13 +52,13 @@ public:
             if (index.column() == Column::Icon) {
                 if (suggestion.language == CodeComprehension::Language::Cpp) {
                     if (!s_cpp_identifier_icon) {
-                        s_cpp_identifier_icon = Gfx::Bitmap::load_from_file("/res/icons/16x16/completion/cpp-identifier.png"sv).release_value_but_fixme_should_propagate_errors();
+                        s_cpp_identifier_icon = MUST(Gfx::Bitmap::load_from_uri("resource://icons/16x16/completion/cpp-identifier.png"sv));
                     }
                     return *s_cpp_identifier_icon;
                 }
                 if (suggestion.language == CodeComprehension::Language::Unspecified) {
                     if (!s_unspecified_identifier_icon) {
-                        s_unspecified_identifier_icon = Gfx::Bitmap::load_from_file("/res/icons/16x16/completion/unspecified-identifier.png"sv).release_value_but_fixme_should_propagate_errors();
+                        s_unspecified_identifier_icon = MUST(Gfx::Bitmap::load_from_uri("resource://icons/16x16/completion/unspecified-identifier.png"sv));
                     }
                     return *s_unspecified_identifier_icon;
                 }

@@ -20,8 +20,8 @@ enum Columns {
 ErrorOr<NonnullRefPtr<OutlineModel>> OutlineModel::create(NonnullRefPtr<PDF::OutlineDict> const& outline)
 {
     auto outline_model = adopt_ref(*new OutlineModel(outline));
-    outline_model->m_closed_item_icon.set_bitmap_for_size(16, TRY(Gfx::Bitmap::load_from_file("/res/icons/16x16/book.png"sv)));
-    outline_model->m_open_item_icon.set_bitmap_for_size(16, TRY(Gfx::Bitmap::load_from_file("/res/icons/16x16/book-open.png"sv)));
+    outline_model->m_closed_item_icon.set_bitmap_for_size(16, TRY(Gfx::Bitmap::load_from_uri("resource://icons/16x16/book.png"sv)));
+    outline_model->m_open_item_icon.set_bitmap_for_size(16, TRY(Gfx::Bitmap::load_from_uri("resource://icons/16x16/book-open.png"sv)));
     return outline_model;
 }
 
@@ -30,7 +30,7 @@ OutlineModel::OutlineModel(NonnullRefPtr<PDF::OutlineDict> const& outline)
 {
 }
 
-void OutlineModel::set_index_open_state(const GUI::ModelIndex& index, bool is_open)
+void OutlineModel::set_index_open_state(GUI::ModelIndex const& index, bool is_open)
 {
     VERIFY(index.is_valid());
     auto* outline_item = static_cast<PDF::OutlineItem*>(index.internal_data());
@@ -42,7 +42,7 @@ void OutlineModel::set_index_open_state(const GUI::ModelIndex& index, bool is_op
     }
 }
 
-int OutlineModel::row_count(const GUI::ModelIndex& index) const
+int OutlineModel::row_count(GUI::ModelIndex const& index) const
 {
     if (!index.is_valid())
         return m_outline->children.size();
@@ -55,7 +55,7 @@ int OutlineModel::tree_column() const
     return Columns::Title;
 }
 
-int OutlineModel::column_count(const GUI::ModelIndex&) const
+int OutlineModel::column_count(GUI::ModelIndex const&) const
 {
     return Columns::_Count;
 }
@@ -66,7 +66,7 @@ PDF::Destination const& OutlineModel::get_destination(GUI::ModelIndex const& ind
     return outline_item->dest;
 }
 
-GUI::Variant OutlineModel::data(const GUI::ModelIndex& index, GUI::ModelRole role) const
+GUI::Variant OutlineModel::data(GUI::ModelIndex const& index, GUI::ModelRole role) const
 {
     VERIFY(index.is_valid());
     auto outline_item = static_cast<PDF::OutlineItem*>(index.internal_data());
@@ -106,7 +106,7 @@ GUI::Variant OutlineModel::data(const GUI::ModelIndex& index, GUI::ModelRole rol
     }
 }
 
-GUI::ModelIndex OutlineModel::parent_index(const GUI::ModelIndex& index) const
+GUI::ModelIndex OutlineModel::parent_index(GUI::ModelIndex const& index) const
 {
     if (!index.is_valid())
         return {};
@@ -127,7 +127,7 @@ GUI::ModelIndex OutlineModel::parent_index(const GUI::ModelIndex& index) const
     VERIFY_NOT_REACHED();
 }
 
-GUI::ModelIndex OutlineModel::index(int row, int column, const GUI::ModelIndex& parent) const
+GUI::ModelIndex OutlineModel::index(int row, int column, GUI::ModelIndex const& parent) const
 {
     if (!parent.is_valid())
         return create_index(row, column, m_outline->children[row].ptr());

@@ -26,10 +26,10 @@ public:
 
     virtual ~HelpListModel() override = default;
 
-    virtual int row_count(const GUI::ModelIndex& = GUI::ModelIndex()) const override { return m_keys.size(); }
-    virtual int column_count(const GUI::ModelIndex& = GUI::ModelIndex()) const override { return 1; }
+    virtual int row_count(GUI::ModelIndex const& = GUI::ModelIndex()) const override { return m_keys.size(); }
+    virtual int column_count(GUI::ModelIndex const& = GUI::ModelIndex()) const override { return 1; }
 
-    virtual GUI::Variant data(const GUI::ModelIndex& index, GUI::ModelRole role = GUI::ModelRole::Display) const override
+    virtual GUI::Variant data(GUI::ModelIndex const& index, GUI::ModelRole role = GUI::ModelRole::Display) const override
     {
         if (role == GUI::ModelRole::Display) {
             return key(index);
@@ -38,7 +38,7 @@ public:
         return {};
     }
 
-    ByteString key(const GUI::ModelIndex& index) const { return m_keys[index.row()]; }
+    ByteString key(GUI::ModelIndex const& index) const { return m_keys[index.row()]; }
 
     void set_from(JsonObject const& object)
     {
@@ -65,7 +65,7 @@ HelpWindow::HelpWindow(GUI::Window* parent)
 {
     resize(530, 365);
     set_title("Spreadsheet Functions Help");
-    set_icon(Gfx::Bitmap::load_from_file("/res/icons/16x16/app-help.png"sv).release_value_but_fixme_should_propagate_errors());
+    set_icon(MUST(Gfx::Bitmap::load_from_uri("resource://icons/16x16/app-help.png"sv)));
     set_window_mode(GUI::WindowMode::Modeless);
 
     auto widget = set_main_widget<GUI::Widget>();

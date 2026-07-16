@@ -18,13 +18,13 @@ class VariablesModel final : public GUI::Model {
 public:
     static RefPtr<VariablesModel> create(Debug::ProcessInspector&, PtraceRegisters const& regs);
 
-    void set_variable_value(const GUI::ModelIndex&, StringView, GUI::Window*);
+    void set_variable_value(GUI::ModelIndex const&, StringView, GUI::Window*);
 
-    virtual int row_count(const GUI::ModelIndex& = GUI::ModelIndex()) const override;
-    virtual int column_count(const GUI::ModelIndex& = GUI::ModelIndex()) const override { return 1; }
-    virtual GUI::Variant data(const GUI::ModelIndex& index, GUI::ModelRole role) const override;
-    virtual GUI::ModelIndex parent_index(const GUI::ModelIndex&) const override;
-    virtual GUI::ModelIndex index(int row, int column = 0, const GUI::ModelIndex& = GUI::ModelIndex()) const override;
+    virtual int row_count(GUI::ModelIndex const& = GUI::ModelIndex()) const override;
+    virtual int column_count(GUI::ModelIndex const& = GUI::ModelIndex()) const override { return 1; }
+    virtual GUI::Variant data(GUI::ModelIndex const& index, GUI::ModelRole role) const override;
+    virtual GUI::ModelIndex parent_index(GUI::ModelIndex const&) const override;
+    virtual GUI::ModelIndex index(int row, int column = 0, GUI::ModelIndex const& = GUI::ModelIndex()) const override;
     Debug::ProcessInspector& inspector() { return m_inspector; }
 
 private:
@@ -33,7 +33,7 @@ private:
         , m_regs(regs)
         , m_inspector(inspector)
     {
-        m_variable_icon.set_bitmap_for_size(16, Gfx::Bitmap::load_from_file("/res/icons/16x16/inspector-object.png"sv).release_value_but_fixme_should_propagate_errors());
+        m_variable_icon.set_bitmap_for_size(16, MUST(Gfx::Bitmap::load_from_uri("resource://icons/16x16/inspector-object.png"sv)));
     }
     Vector<NonnullOwnPtr<Debug::DebugInfo::VariableInfo>> m_variables;
     PtraceRegisters m_regs;

@@ -292,6 +292,7 @@ set(KERNEL_SOURCES
     Net/IP/Socket.cpp
     Net/LocalSocket.cpp
     Net/LoopbackAdapter.cpp
+    Net/MDIO.cpp
     Net/NetworkAdapter.cpp
     Net/NetworkTask.cpp
     Net/NetworkingManagement.cpp
@@ -402,6 +403,7 @@ set(KERNEL_SOURCES
     Tasks/WorkQueue.cpp
     Time/TimeManagement.cpp
     Time/TimerQueue.cpp
+    kprintf.cpp
 )
 
 if ("${SERENITY_ARCH}" STREQUAL "x86_64")
@@ -426,6 +428,7 @@ if ("${SERENITY_ARCH}" STREQUAL "x86_64")
         Arch/x86_64/Interrupts/APIC.cpp
         Arch/x86_64/Interrupts/IOAPIC.cpp
         Arch/x86_64/Interrupts/PIC.cpp
+        Arch/x86_64/Interrupts/PICSpuriousInterruptHandler.cpp
         Arch/x86_64/Time/APICTimer.cpp
         Arch/x86_64/Time/HPET.cpp
         Arch/x86_64/Time/HPETComparator.cpp
@@ -444,10 +447,6 @@ if ("${SERENITY_ARCH}" STREQUAL "x86_64")
         Arch/x86_64/RTC.cpp
         Arch/x86_64/Shutdown.cpp
         Arch/x86_64/SmapDisabler.cpp
-
-        # TODO: Share these with the aarch64 build
-        Interrupts/SpuriousInterruptHandler.cpp
-        kprintf.cpp
     )
 
     set(KERNEL_SOURCES
@@ -503,8 +502,6 @@ elseif("${SERENITY_ARCH}" STREQUAL "aarch64")
         ${KERNEL_SOURCES}
         ${RPI_SOURCES}
         ${SOURCES_RUNNING_WITHOUT_MMU}
-
-        kprintf.cpp
 
         Arch/aarch64/archctl.cpp
         Arch/aarch64/boot.S
@@ -576,7 +573,6 @@ elseif("${SERENITY_ARCH}" STREQUAL "riscv64")
         "${extensions_header}"
 
         Arch/Processor.cpp
-        kprintf.cpp
 
         Arch/riscv64/archctl.cpp
         Arch/riscv64/boot.S

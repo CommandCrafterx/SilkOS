@@ -9,6 +9,7 @@
 #include <AK/HashMap.h>
 #include <AK/LexicalPath.h>
 #include <AK/Span.h>
+#include <AK/Variant.h>
 #include <AK/Vector.h>
 #include <LibArchive/TarStream.h>
 #include <LibCompress/Gzip.h>
@@ -42,6 +43,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     StringView directory;
     Vector<ByteString> paths;
     u32 strip_components {};
+    StringView mtime_or_file;
 
     Core::ArgsParser args_parser;
     args_parser.add_option(create, "Create archive", "create", 'c');
@@ -56,6 +58,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     args_parser.add_option(archive_file, "Archive file", "file", 'f', "FILE");
     args_parser.add_option(dereference, "Follow symlinks", "dereference", 'h');
     args_parser.add_option(strip_components, "Strip the first NUMBER path components from each file path", "strip-components", {}, "NUMBER");
+    args_parser.add_option(mtime_or_file, "Set mtime for added files", "mtime", {}, "NUMBER or FILE");
     args_parser.add_positional_argument(paths, "Paths", "PATHS", Core::ArgsParser::Required::No);
     args_parser.parse(arguments);
 
@@ -190,6 +193,9 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
                 auto absolute_path = TRY(FileSystem::absolute_path(filename));
                 auto parent_path = LexicalPath(absolute_path).parent();
                 auto header_mode = TRY(header.mode());
+                auto header_timestamp = TRY(header.timestamp());
+
+                struct timeval times[2] = { { header_timestamp, 0 }, { header_timestamp, 0 } };
 
                 switch (header.type_flag()) {
                 case Archive::TarFileType::NormalFile:
@@ -204,6 +210,9 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
                         TRY(Core::System::write(fd, slice));
                     }
 
+                    if (futimes(fd, times) < 0)
+                        warnln("failed to set timestamps for {}", header.filename());
+
                     TRY(Core::System::close(fd));
                     break;
                 }
@@ -211,6 +220,8 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
                     MUST(Core::Directory::create(parent_path, Core::Directory::CreateDirectories::Yes));
 
                     TRY(Core::System::symlink(header.link_name(), absolute_path));
+                    if (lutimes(absolute_path.characters(), times) < 0)
+                        warnln("failed to set timestamps for {}", header.filename());
                     break;
                 }
                 case Archive::TarFileType::Directory: {
@@ -219,6 +230,8 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
                     auto result_or_error = Core::System::mkdir(absolute_path, header_mode);
                     if (result_or_error.is_error() && result_or_error.error().code() != EEXIST)
                         return result_or_error.release_error();
+                    if (utimes(absolute_path.characters(), times) < 0)
+                        warnln("failed to set timestamps for {}", header.filename());
                     break;
                 }
                 default:
@@ -241,6 +254,16 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
         if (paths.size() == 0) {
             warnln("you must provide at least one path to be archived");
             return 1;
+        }
+
+        Optional<time_t> mtime;
+        if (!mtime_or_file.is_null()) {
+            if (auto time = mtime_or_file.to_number<time_t>(); time.has_value()) {
+                mtime = time;
+            } else {
+                auto statbuf = TRY(Core::System::lstat(mtime_or_file));
+                mtime = statbuf.st_mtime;
+            }
         }
 
         NonnullOwnPtr<Stream> output_stream = TRY(Core::File::standard_output());
@@ -271,10 +294,12 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
             auto file = file_or_error.release_value();
 
             auto statbuf = TRY(Core::System::lstat(path));
+            if (mtime.has_value())
+                statbuf.st_mtime = *mtime;
             auto canonicalized_path = LexicalPath::canonicalized_path(path);
             // FIXME: We should stream instead of reading the entire file in one go, but TarOutputStream does not have any interface to do so.
             auto file_content = TRY(file->read_until_eof());
-            TRY(tar_stream.add_file(canonicalized_path, statbuf.st_mode, file_content));
+            TRY(tar_stream.add_file(canonicalized_path, statbuf, file_content));
             if (verbose)
                 outln("{}", canonicalized_path);
 
@@ -283,9 +308,11 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
 
         auto add_link = [&](ByteString path) -> ErrorOr<void> {
             auto statbuf = TRY(Core::System::lstat(path));
+            if (mtime.has_value())
+                statbuf.st_mtime = *mtime;
 
             auto canonicalized_path = LexicalPath::canonicalized_path(path);
-            TRY(tar_stream.add_link(canonicalized_path, statbuf.st_mode, TRY(Core::System::readlink(path))));
+            TRY(tar_stream.add_link(canonicalized_path, statbuf, TRY(Core::System::readlink(path))));
             if (verbose)
                 outln("{}", canonicalized_path);
 
@@ -294,9 +321,11 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
 
         auto add_directory = [&](ByteString path, auto handle_directory) -> ErrorOr<void> {
             auto statbuf = TRY(Core::System::lstat(path));
+            if (mtime.has_value())
+                statbuf.st_mtime = *mtime;
 
             auto canonicalized_path = LexicalPath::canonicalized_path(path);
-            TRY(tar_stream.add_directory(canonicalized_path, statbuf.st_mode));
+            TRY(tar_stream.add_directory(canonicalized_path, statbuf));
             if (verbose)
                 outln("{}", canonicalized_path);
 

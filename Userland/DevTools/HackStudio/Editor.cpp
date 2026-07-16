@@ -440,13 +440,13 @@ void Editor::clear_execution_position()
 
 Gfx::Bitmap const& Editor::breakpoint_icon_bitmap()
 {
-    static auto bitmap = Gfx::Bitmap::load_from_file("/res/icons/16x16/breakpoint.png"sv).release_value_but_fixme_should_propagate_errors();
+    static auto bitmap = MUST(Gfx::Bitmap::load_from_uri("resource://icons/16x16/breakpoint.png"sv));
     return *bitmap;
 }
 
 Gfx::Bitmap const& Editor::current_position_icon_bitmap()
 {
-    static auto bitmap = Gfx::Bitmap::load_from_file("/res/icons/16x16/go-forward.png"sv).release_value_but_fixme_should_propagate_errors();
+    static auto bitmap = MUST(Gfx::Bitmap::load_from_uri("resource://icons/16x16/go-forward.png"sv));
     return *bitmap;
 }
 
@@ -569,7 +569,7 @@ void Editor::flush_file_content_to_langauge_server()
         document().text());
 }
 
-void Editor::on_navigatable_link_click(const GUI::TextDocumentSpan& span)
+void Editor::on_navigatable_link_click(GUI::TextDocumentSpan const& span)
 {
     auto span_text = document().text_in_range(span.range);
     auto header_path = span_text.substring(1, span_text.length() - 2);
@@ -577,7 +577,7 @@ void Editor::on_navigatable_link_click(const GUI::TextDocumentSpan& span)
     navigate_to_include_if_available(header_path);
 }
 
-void Editor::on_identifier_click(const GUI::TextDocumentSpan& span)
+void Editor::on_identifier_click(GUI::TextDocumentSpan const& span)
 {
     if (!m_language_client)
         return;
