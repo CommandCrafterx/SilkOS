@@ -9,6 +9,7 @@
 #include <AK/Vector.h>
 #include <LibCore/File.h>
 #include <LibCrypto/Hash/MD5.h>
+#include <LibSSH/BehaviorControl.h>
 #include <LibSSH/Forward.h>
 #include <LibSSH/SFTP/Peer.h>
 #include <sys/stat.h>
@@ -22,7 +23,7 @@ public:
     {
     }
 
-    Coroutine<ErrorOr<void>> handle_channel_data(Session&);
+    Coroutine<ErrorOr<BehaviorControl>> handle_channel_data(Session&);
     void handle_channel_eof(Session const&);
 
     bool is_ready_to_be_closed() const { return m_is_ready_to_be_closed; }
@@ -46,9 +47,12 @@ private:
     enum class StatType : u8 {
         Normal,
         LStat,
+        FStat,
     };
     ErrorOr<void> handle_stat(FixedMemoryStream& stream, StatType);
     ErrorOr<void> send_file_attribute_message(u32 id, struct ::stat const&);
+
+    ErrorOr<void> handle_setstat(FixedMemoryStream&, StatType);
 
     ErrorOr<void> handle_open(FixedMemoryStream& stream);
     ErrorOr<void> send_file_handle(u32, File const&);

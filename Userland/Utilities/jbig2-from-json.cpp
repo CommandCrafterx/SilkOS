@@ -29,7 +29,7 @@ static ErrorOr<Gfx::JBIG2::Organization> jbig2_organization_from_json(JsonValue 
     if (!value.is_string())
         return Error::from_string_literal("expected string for \"organization\"");
 
-    auto string = value.as_string();
+    auto const& string = value.as_string();
     if (string == "sequential")
         return Gfx::JBIG2::Organization::Sequential;
     if (string == "random_access")
@@ -60,8 +60,8 @@ static ErrorOr<Gfx::JBIG2::FileHeaderData> jbig2_header_from_json(JsonObject con
             return {};
         }
 
-        dbgln("key {}", key);
-        return Error::from_string_literal("unknown key");
+        dbgln("global_header key {}", key);
+        return Error::from_string_literal("unknown global_header key");
     }));
 
     return header;
@@ -189,8 +189,6 @@ static ErrorOr<JSONRect> jbig2_rect_from_json(JsonObject const& object)
 
 static ErrorOr<NonnullRefPtr<Gfx::Bitmap>> jbig2_load_bitmap(ToJSONOptions const& options, ByteString const& base_name)
 {
-    RefPtr<Gfx::Bitmap> bitmap;
-
     ByteString base_directory = LexicalPath { options.input_path }.dirname();
     auto path = LexicalPath::absolute_path(base_directory, base_name);
     auto file_or_error = Core::MappedFile::map(path);
@@ -372,15 +370,15 @@ static ErrorOr<u8> jbig2_region_segment_information_flags_from_json(JsonObject c
     return flags;
 }
 
-struct RegionSegmentInformatJSON {
+struct RegionSegmentInformationJSON {
     Gfx::JBIG2::RegionSegmentInformationField region_segment_information {};
     bool use_width_from_image { false };
     bool use_height_from_image { false };
 };
 
-static ErrorOr<RegionSegmentInformatJSON> jbig2_region_segment_information_from_json(JsonObject const& object)
+static ErrorOr<RegionSegmentInformationJSON> jbig2_region_segment_information_from_json(JsonObject const& object)
 {
-    RegionSegmentInformatJSON result;
+    RegionSegmentInformationJSON result;
     result.use_width_from_image = true;
     result.use_height_from_image = true;
 
@@ -688,7 +686,7 @@ static ErrorOr<Gfx::JBIG2::SymbolDictionarySegmentData::HeightClass::Symbol> jbi
                 image = move(refined_symbol);
                 return {};
             }
-            return Error::from_string_literal("expected object for \"instance_refines_symbol_to\"");
+            return Error::from_string_literal("expected object for \"refines_symbol_to\"");
         }
 
         if (key == "refines_using_strips"sv) {
@@ -1040,7 +1038,7 @@ static ErrorOr<u16> jbig2_text_region_huffman_flags_from_json(JsonObject const& 
                 }
             }
             // FIXME: Also allow names "standard_table_6", "standard_table_7", "custom" for values 0, 1, 3.
-            return Error::from_string_literal("expected 0, 1, or 2 for \"huffman_table_selection_for_first_s\"");
+            return Error::from_string_literal("expected 0, 1, or 3 for \"huffman_table_selection_for_first_s\"");
         }
 
         if (key == "huffman_table_selection_for_subsequent_s"sv) {
@@ -1693,7 +1691,7 @@ static ErrorOr<u8> jbig2_halftone_region_flags_from_json(JsonObject const& objec
                 flags |= ht_template.value() << 1;
                 return {};
             }
-            return Error::from_string_literal("expected uint for \"gb_template\"");
+            return Error::from_string_literal("expected uint for \"ht_template\"");
         }
 
         if (key == "enable_skip"sv) {
@@ -2004,7 +2002,7 @@ static ErrorOr<Gfx::JBIG2::GenericRegionSegmentData> jbig2_generic_region_from_j
     if (!object.has_value())
         return Error::from_string_literal("generic_region segment should have \"data\" object");
 
-    RegionSegmentInformatJSON region_segment_information;
+    RegionSegmentInformationJSON region_segment_information;
     region_segment_information.use_width_from_image = true;
     region_segment_information.use_height_from_image = true;
     Optional<u32> real_height_for_generic_region_of_initially_unknown_size;
@@ -2166,7 +2164,7 @@ static ErrorOr<Gfx::JBIG2::GenericRefinementRegionSegmentData> jbig2_generic_ref
     if (!object.has_value())
         return Error::from_string_literal("generic_refinement_region segment should have \"data\" object");
 
-    RegionSegmentInformatJSON region_segment_information;
+    RegionSegmentInformationJSON region_segment_information;
     region_segment_information.use_width_from_image = true;
     region_segment_information.use_height_from_image = true;
     u8 flags = 0;
@@ -2579,7 +2577,7 @@ static ErrorOr<Vector<Gfx::JBIG2::TablesData::Entry>> jbig2_tables_entries_from_
 static ErrorOr<Gfx::JBIG2::SegmentData> jbig2_tables_from_json(Gfx::JBIG2::SegmentHeaderData const& header, Optional<JsonObject const&> object)
 {
     if (!object.has_value())
-        return Error::from_string_literal("page_information segment should have \"data\" object");
+        return Error::from_string_literal("tables segment should have \"data\" object");
 
     Gfx::JBIG2::TablesData data {};
 
@@ -2666,7 +2664,7 @@ static ErrorOr<Gfx::JBIG2::SegmentData> jbig2_extension_from_json(Gfx::JBIG2::Se
     TRY(object->try_for_each_member([&](StringView key, JsonValue const& value) -> ErrorOr<void> {
         if (key == "type"sv) {
             if (value.is_string()) {
-                auto type = value.as_string();
+                auto const& type = value.as_string();
                 if (type == "single_byte_coded_comment"sv) {
                     data.type = Gfx::JBIG2::ExtensionType::SingleByteCodedComment;
                     return {};
@@ -2904,7 +2902,7 @@ static ErrorOr<Gfx::JBIG2::FileData> jbig2_data_from_json(ToJSONOptions const& o
 
     if (!json.is_object())
         return Error::from_string_literal("top-level should be object");
-    auto object = json.as_object();
+    auto const& object = json.as_object();
 
     if (auto global_header = object.get_object("global_header"sv); global_header.has_value())
         jbig2.header = TRY(jbig2_header_from_json(global_header.value()));
@@ -2927,8 +2925,8 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     StringView out_path;
     Core::ArgsParser args_parser;
     args_parser.set_general_help("Creates JBIG2 test files from JSON descriptions.");
-    args_parser.add_positional_argument(in_path, "Path to input image file", "FILE");
-    args_parser.add_option(out_path, "Path to output image file", "output", 'o', "FILE");
+    args_parser.add_positional_argument(in_path, "Path to input json file", "FILE");
+    args_parser.add_option(out_path, "Path to output jbig2 file", "output", 'o', "FILE");
     args_parser.parse(arguments);
     if (out_path.is_empty())
         return Error::from_string_literal("-o is required");

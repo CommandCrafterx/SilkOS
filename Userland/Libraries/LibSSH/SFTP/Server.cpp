@@ -13,7 +13,7 @@
 
 namespace SSH::SFTP {
 
-Coroutine<ErrorOr<void>> Server::handle_channel_data(Session& session)
+Coroutine<ErrorOr<BehaviorControl>> Server::handle_channel_data(Session& session)
 {
     // FIXME: For the moment everything is done sequentially, but we should
     //        probably make most IO related syscall asynchronous.
@@ -21,13 +21,15 @@ Coroutine<ErrorOr<void>> Server::handle_channel_data(Session& session)
     FixedMemoryStream stream { session.channel_data.data() };
     ScopeGuard commit_read_bytes { [&] { session.channel_data.dequeue(stream.offset()); } };
 
-    if (m_state == State::Constructed)
-        co_return handle_init_message(stream);
+    if (m_state == State::Constructed) {
+        CO_TRY(handle_init_message(stream));
+        co_return BehaviorControl::ContinueExecution;
+    }
 
     VERIFY(m_state == State::Initialized);
     while (stream.remaining() > 0) {
-        if (!is_buffer_containing_a_full_packet(session.channel_data.data()))
-            co_return {};
+        if (!is_buffer_containing_a_full_packet(session.channel_data.data().slice(stream.offset())))
+            co_return BehaviorControl::WaitForMoreData;
 
         CO_TRY(handle_packet(stream));
     }
@@ -35,7 +37,7 @@ Coroutine<ErrorOr<void>> Server::handle_channel_data(Session& session)
     if (session.has_received_eof)
         m_is_ready_to_be_closed = true;
 
-    co_return {};
+    co_return BehaviorControl::ContinueExecution;
 }
 
 void Server::handle_channel_eof(Session const& session)
@@ -91,8 +93,14 @@ ErrorOr<void> Server::handle_packet(FixedMemoryStream& stream)
         return handle_stat(stream, StatType::Normal);
     case FXPMessageID::LSTAT:
         return handle_stat(stream, StatType::LStat);
+    case FXPMessageID::FSTAT:
+        return handle_stat(stream, StatType::FStat);
     case FXPMessageID::WRITE:
         return handle_write(stream);
+    case FXPMessageID::SETSTAT:
+        return handle_setstat(stream, StatType::Normal);
+    case FXPMessageID::FSETSTAT:
+        return handle_setstat(stream, StatType::FStat);
     case FXPMessageID::CLOSE:
         return handle_close(stream);
     default:
@@ -106,15 +114,19 @@ ErrorOr<void> Server::handle_packet(FixedMemoryStream& stream)
 ErrorOr<void> Server::handle_stat(FixedMemoryStream& stream, StatType type)
 {
     u32 id = TRY(stream.read_value<NetworkOrdered<u32>>());
-    auto path = TRY(decode_string(stream));
+    auto path_or_handle = TRY(decode_string(stream));
 
     // "The server responds to this request with either SSH_FXP_ATTRS or SSH_FXP_STATUS."
-    auto maybe_stat = [&]() {
+    auto maybe_stat = [&] -> ErrorOr<struct stat> {
         switch (type) {
         case StatType::LStat:
-            return Core::System::lstat(path);
+            return Core::System::lstat(path_or_handle);
+        case StatType::FStat: {
+            auto fd = TRY(find_file(path_or_handle))->file->fd();
+            return Core::System::fstat(fd);
+        }
         case StatType::Normal:
-            return Core::System::stat(path);
+            return Core::System::stat(path_or_handle);
         }
         VERIFY_NOT_REACHED();
     }();
@@ -147,6 +159,57 @@ ErrorOr<void> Server::send_file_attribute_message(u32 id, struct stat const& s)
 
     auto packet = TRY(stream.read_until_eof());
     TRY(write_packet(packet));
+    return {};
+}
+
+// 6.9 Setting File Attributes
+// https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02#section-6.9
+ErrorOr<void> Server::handle_setstat(FixedMemoryStream& stream, StatType type)
+{
+    VERIFY(type != StatType::LStat);
+
+    u32 id = TRY(stream.read_value<NetworkOrdered<u32>>());
+    auto path_or_handle = TRY(decode_string(stream));
+    auto attr = TRY(Attributes::from_stream(stream));
+
+    Optional<int> maybe_fd {};
+    if (type == StatType::FStat)
+        maybe_fd = TRY(find_file(path_or_handle))->file->fd();
+
+    auto maybe_error = [&] -> ErrorOr<void> {
+        if (attr.size.has_value()) {
+            if (type == StatType::FStat)
+                TRY(Core::System::ftruncate(*maybe_fd, *attr.size));
+            else
+                dbgln("FIXME: FSETSTAT should set file size");
+        }
+        if (attr.uid.has_value()) {
+            VERIFY(attr.gid.has_value());
+            dbgln("FIXME: FSETSTAT should set user/group");
+        }
+        if (attr.mode.has_value()) {
+            dbgln("FIXME: FSETSTAT should set mode");
+        }
+        if (attr.atim.has_value()) {
+            VERIFY(attr.mtim.has_value());
+            dbgln("FIXME: FSETSTAT should set atim/mtim");
+        }
+        return {};
+    }();
+
+    if (maybe_error.is_error()) {
+        auto const& error = maybe_error.error();
+        VERIFY(error.is_errno());
+        if (error.code() == ENOENT)
+            TRY(send_status_message(id, FXStatus::NO_SUCH_FILE));
+        else if (error.code() == EACCES)
+            TRY(send_status_message(id, FXStatus::PERMISSION_DENIED));
+        else
+            TRY(send_status_message(id, FXStatus::FAILURE));
+        return {};
+    }
+
+    TRY(send_status_message(id, FXStatus::OK));
     return {};
 }
 

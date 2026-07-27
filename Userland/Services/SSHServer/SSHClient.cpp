@@ -43,7 +43,7 @@ SSHClient::~SSHClient()
     Core::EventLoop::unregister_signal(m_sigchld_handler_id);
 }
 
-ErrorOr<SSHClient::BehaviorControl> SSHClient::handle_data(ByteBuffer& data)
+ErrorOr<BehaviorControl> SSHClient::handle_data(ByteBuffer& data)
 {
     if (m_state != State::Constructed) {
         if (!is_buffer_containing_a_full_packet(data))
@@ -483,7 +483,7 @@ ErrorOr<void> SSHClient::send_user_authentication_success()
     return {};
 }
 
-ErrorOr<SSHClient::BehaviorControl> SSHClient::handle_generic_packet(GenericMessage&& message)
+ErrorOr<BehaviorControl> SSHClient::handle_generic_packet(GenericMessage&& message)
 {
     switch (message.type) {
     case MessageID::DISCONNECT:
@@ -641,9 +641,17 @@ Coroutine<void> SSHClient::async_stream_data_to_subsystem(NonnullRefPtr<Session>
             if (session->channel_data.data().is_empty())
                 break;
 
-            CO_TRY(co_await session->system.visit(
-                [&](auto& system) -> Coroutine<ErrorOr<void>> { return system.handle_channel_data(session); },
-                [](Empty) -> Coroutine<ErrorOr<void>> { VERIFY_NOT_REACHED(); }));
+            auto behavior = CO_TRY(co_await session->system.visit(
+                [&](auto& system) -> Coroutine<ErrorOr<BehaviorControl>> { return system.handle_channel_data(session); },
+                [](Empty) -> Coroutine<ErrorOr<BehaviorControl>> { VERIFY_NOT_REACHED(); }));
+            switch (behavior) {
+            case BehaviorControl::ContinueExecution:
+                break;
+            case BehaviorControl::WaitForMoreData:
+                co_return {};
+            case BehaviorControl::Disconnect:
+                co_return Error::from_string_literal("Subsystem disconnected");
+            }
         }
 
         CO_TRY(close_session_if_needed(session));

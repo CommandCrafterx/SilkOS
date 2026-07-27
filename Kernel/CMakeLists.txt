@@ -285,7 +285,6 @@ set(KERNEL_SOURCES
     Library/KLexicalPath.cpp
     Library/KString.cpp
     Library/UserOrKernelBuffer.cpp
-    Net/Intel/E1000ENetworkAdapter.cpp
     Net/Intel/E1000NetworkAdapter.cpp
     Net/Realtek/RTL8168NetworkAdapter.cpp
     Net/VirtIO/VirtIONetworkAdapter.cpp
@@ -447,6 +446,7 @@ if ("${SERENITY_ARCH}" STREQUAL "x86_64")
         Arch/x86_64/RTC.cpp
         Arch/x86_64/Shutdown.cpp
         Arch/x86_64/SmapDisabler.cpp
+        Arch/x86_64/Time/TSC.cpp
     )
 
     set(KERNEL_SOURCES
@@ -517,6 +517,7 @@ elseif("${SERENITY_ARCH}" STREQUAL "aarch64")
         Arch/aarch64/MainIdRegister.cpp
         Arch/aarch64/PSCI.cpp
         Arch/aarch64/PageDirectory.cpp
+        Arch/aarch64/PrivilegedAccessNever.S
         Arch/aarch64/Processor.cpp
         Arch/aarch64/PowerState.cpp
         Arch/aarch64/SafeMem.cpp
