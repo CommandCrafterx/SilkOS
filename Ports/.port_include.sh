@@ -8,6 +8,8 @@ if [ -z "${SERENITY_STRIPPED_ENV:-}" ]; then
 fi
 unset SERENITY_STRIPPED_ENV
 
+source "${SCRIPT}/.download_file.sh"
+
 export MAKEJOBS="${MAKEJOBS:-$(nproc)}"
 export CMAKE_BUILD_PARALLEL_LEVEL="$MAKEJOBS"
 
@@ -115,9 +117,9 @@ fi
 mkdir -p "${PORT_BUILD_DIR}"
 cd "${PORT_BUILD_DIR}"
 
-# 1 = url
+# 1 = source
 # 2 = sha256sum
-FILES_SIMPLE_PATTERN='^(https?:\/\/.+)#([0-9a-f]{64})$'
+FILES_SIMPLE_PATTERN='^(https?:\/\/.+|mirror://[^/]+/.+)#([0-9a-f]{64})$'
 
 # 1 = repository
 # 2 = revision
@@ -301,54 +303,13 @@ func_defined post_fetch || post_fetch() {
     :
 }
 
-do_download_file() {
-    local url="$1"
-    local filename="$2"
-    local accept_existing="${3:-true}"
-
-    if $accept_existing && [ -f "$filename" ]; then
-        echo "$filename already exists"
-        return
-    fi
-
-    echo "Downloading URL: ${url}"
-
-    if which curl; then
-        run_nocd curl ${curlopts:-} "$url" --fail -L -o "$filename"
-    else
-        run_nocd pro "$url" > "$filename"
-    fi
-}
-
 fetch_simple() {
     url="${1}"
     checksum="${2}"
 
     filename="$(basename "${url}")"
 
-    tried_download_again=0
-
-    while true; do
-        do_download_file "${url}" "${PORT_META_DIR}/${filename}"
-
-        actual_checksum="$(sha256sum "${PORT_META_DIR}/${filename}" | cut -f1 -d' ')"
-
-        if [ "${actual_checksum}" = "${checksum}" ]; then
-            break
-        fi
-
-        echo "SHA256 checksum of downloaded file '${filename}' does not match!"
-        echo "Expected: ${checksum}"
-        echo "Actual:   ${actual_checksum}"
-        rm -f "${PORT_META_DIR}/${filename}"
-        echo "Removed erroneous download."
-        if [ "${tried_download_again}" -eq 1 ]; then
-            echo "Please run script again."
-            exit 1
-        fi
-        echo "Trying to download the file again."
-        tried_download_again=1
-    done
+    download_file "${url}" "${PORT_META_DIR}/${filename}" "${checksum}"
 
     if [ ! -f "$workdir"/.${filename}_extracted ]; then
         case "$filename" in

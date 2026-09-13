@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <stddef.h>
 #include <sys/cdefs.h>
 
 __BEGIN_DECLS
@@ -34,6 +35,8 @@ enum {
 #define LC_MONETARY_MASK (1 << LC_MONETARY)
 #define LC_MESSAGES_MASK (1 << LC_MESSAGES)
 #define LC_ALL_MASK (LC_NUMERIC_MASK | LC_CTYPE_MASK | LC_COLLATE_MASK | LC_TIME_MASK | LC_MONETARY_MASK | LC_MESSAGES_MASK)
+
+#define LC_GLOBAL_LOCALE ((locale_t) - 1)
 
 struct lconv {
     char* decimal_point;
@@ -67,6 +70,7 @@ typedef struct __locale_t_impl* locale_t;
 
 struct lconv* localeconv(void);
 void freelocale(locale_t);
+char const* getlocalename_l(int, locale_t);
 locale_t newlocale(int, char const*, locale_t);
 char* setlocale(int category, char const* locale);
 locale_t uselocale(locale_t);
