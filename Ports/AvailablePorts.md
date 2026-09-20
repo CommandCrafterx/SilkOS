@@ -6,7 +6,7 @@ This list is also available at [ports.serenityos.net](https://ports.serenityos.n
 
 | Port                                            | Name                                                          | Version                | Website                                                              |
 | ----------------------------------------------- | ------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------------- |
-| [`abseil`](abseil/)                             | Abseil Common Libraries                                       | 20230802.0             | https://abseil.io/                                                   |
+| [`abseil`](abseil/)                             | Abseil Common Libraries                                       | 20260817.0             | https://abseil.io/                                                   |
 | [`aclock`](aclock/)                             | aclock                                                        | 2.3                    | https://github.com/tenox7/aclock                                     |
 | [`acpica-tools`](acpica-tools/)                 | ACPI Component Architecture Project Userspace Utilities       | R06_28_23              | https://github.com/acpica/acpica                                     |
 | [`alpine`](alpine/)                             | Alpine Email Client                                           | 2.26                   | https://alpineapp.email                                              |
@@ -27,7 +27,7 @@ This list is also available at [ports.serenityos.net](https://ports.serenityos.n
 | [`brotli`](brotli/)                             | Brotli                                                        | 1.2.0                  | https://github.com/google/brotli                                     |
 | [`byacc`](byacc/)                               | Berkeley Yacc                                                 | 20260126               | https://invisible-island.net/byacc/byacc.html                        |
 | [`bzip2`](bzip2/)                               | bzip2                                                         | 1.0.8                  | https://sourceware.org/bzip2/                                        |
-| [`bzip3`](bzip3/)                               | bzip3                                                         | 1.5.3                  | https://github.com/kspalaiologos/bzip3                               |
+| [`bzip3`](bzip3/)                               | bzip3                                                         | 1.5.4                  | https://github.com/kspalaiologos/bzip3                               |
 | [`c-ares`](c-ares/)                             | c-ares                                                        | 1.34.8                 | https://c-ares.org                                                   |
 | [`c-ray`](c-ray/)                               | C-Ray                                                         | 8f30eb9                | https://github.com/vkoskiv/c-ray                                     |
 | [`ca-certificates`](ca-certificates/)           | Mozilla CA certificate store                                  | 2026-08-13             | https://curl.se/docs/caextract.html                                  |
@@ -45,7 +45,7 @@ This list is also available at [ports.serenityos.net](https://ports.serenityos.n
 | [`cmake`](cmake/)                               | CMake                                                         | 3.30.3                 | https://cmake.org/                                                   |
 | [`cmatrix`](cmatrix/)                           | cmatrix                                                       | 5c082c6                | https://github.com/abishekvashok/cmatrix                             |
 | [`composer`](composer/)                         | Composer                                                      | 2.6.5                  | https://getcomposer.org/                                             |
-| [`coreutils`](coreutils/)                       | GNU core utilities                                            | 9.9                    | https://www.gnu.org/software/coreutils/                              |
+| [`coreutils`](coreutils/)                       | GNU core utilities                                            | 9.12                   | https://www.gnu.org/software/coreutils/                              |
 | [`cowsay`](cowsay/)                             | cowsay                                                        | 3.04                   | https://github.com/tnalpgge/rank-amateur-cowsay                      |
 | [`cpio`](cpio/)                                 | GNU cpio archive utility                                      | 2.15                   | https://www.gnu.org/software/cpio/                                   |
 | [`curl`](curl/)                                 | curl                                                          | 8.22.0                 | https://curl.se/                                                     |
@@ -56,7 +56,7 @@ This list is also available at [ports.serenityos.net](https://ports.serenityos.n
 | [`diffutils`](diffutils/)                       | GNU Diffutils                                                 | 3.12                   | https://www.gnu.org/software/diffutils/                              |
 | [`dmidecode`](dmidecode/)                       | dmidecode                                                     | 3.7                    | https://github.com/mirror/dmidecode                                  |
 | [`doom`](doom/)                                 | DOOM                                                          | 613f870                | https://github.com/ozkl/doomgeneric                                  |
-| [`dos2unix`](dos2unix/)                         | dos2unix                                                      | 7.5.1                  | https://waterlan.home.xs4all.nl/dos2unix.html                        |
+| [`dos2unix`](dos2unix/)                         | dos2unix                                                      | 7.5.7                  | https://waterlan.home.xs4all.nl/dos2unix.html                        |
 | [`dosbox-staging`](dosbox-staging/)             | DOSBox Staging                                                | 0.80.1                 | https://dosbox-staging.github.io/                                    |
 | [`dosfstools`](dosfstools/)                     | dosfstools utility suite                                      | 4.2                    | https://github.com/dosfstools/dosfstools/                            |
 | [`double-conversion`](double-conversion/)       | double-conversion                                             | 3.4.0                  | https://github.com/google/double-conversion                          |
@@ -77,14 +77,14 @@ This list is also available at [ports.serenityos.net](https://ports.serenityos.n
 | [`ffmpeg`](ffmpeg/)                             | ffmpeg                                                        | 8.1.1                  | https://ffmpeg.org                                                   |
 | [`figlet`](figlet/)                             | FIGlet                                                        | 2.2.5                  | http://www.figlet.org/                                               |
 | [`file`](file/)                                 | file (determine file type)                                    | 5.48                   | https://www.darwinsys.com/file/                                      |
-| [`findutils`](findutils/)                       | GNU findutils                                                 | 4.10.0                 | https://www.gnu.org/software/findutils/                              |
+| [`findutils`](findutils/)                       | GNU findutils                                                 | 4.11.0                 | https://www.gnu.org/software/findutils/                              |
 | [`fio`](fio/)                                   | fio - Flexible I/O tester                                     | 3.42                   | https://fio.readthedocs.io/en/latest/                                |
 | [`flac`](flac/)                                 | Free Lossless Audio Codec                                     | 1.5.0                  | https://xiph.org/flac/                                               |
 | [`flare-engine`](flare-engine/)                 | Flare (engine)                                                | 1.14                   | https://flarerpg.org/                                                |
 | [`flare-game`](flare-game/)                     | Flare (game)                                                  | 1.14                   | https://flarerpg.org/                                                |
 | [`flatbuffers`](flatbuffers/)                   | Flatbuffers                                                   | 25.12.19               | https://github.com/google/flatbuffers                                |
 | [`flex`](flex/)                                 | flex                                                          | 2.6.4                  | https://github.com/westes/flex                                       |
-| [`fluidsynth`](fluidsynth/)                     | fluidsynth                                                    | 2.3.5                  | https://www.fluidsynth.org/                                          |
+| [`fluidsynth`](fluidsynth/)                     | fluidsynth                                                    | 2.6.1                  | https://www.fluidsynth.org/                                          |
 | [`fontconfig`](fontconfig/)                     | Fontconfig                                                    | 2.14.2                 | https://www.freedesktop.org/wiki/Software/fontconfig/                |
 | [`fotaq`](fotaq/)                               | Flight of the Amazon Queen                                    | 1.0                    | https://www.scummvm.org/games/#games-queen                           |
 | [`freeciv`](freeciv/)                           | Freeciv                                                       | 3.1.1                  | http://freeciv.org/                                                  |
@@ -170,7 +170,7 @@ This list is also available at [ports.serenityos.net](https://ports.serenityos.n
 | [`libmodplug`](libmodplug/)                     | libmodplug                                                    | 0.8.9.0                | http://modplug-xmms.sourceforge.net/                                 |
 | [`libmpeg2`](libmpeg2/)                         | libmpeg2                                                      | 0.5.1                  | https://libmpeg2.sourceforge.io/                                     |
 | [`libmpg123`](libmpg123/)                       | libmpg123                                                     | 1.33.7                 | https://www.mpg123.de/                                               |
-| [`libmt32emu`](libmt32emu/)                     | libmt32emu                                                    | 2.7.1                  | https://github.com/munt/munt                                         |
+| [`libmt32emu`](libmt32emu/)                     | libmt32emu                                                    | 2.8.2                  | https://github.com/munt/munt                                         |
 | [`libogg`](libogg/)                             | libogg                                                        | 1.3.6                  | https://github.com/xiph/ogg                                          |
 | [`liboggz`](liboggz/)                           | liboggz                                                       | 1.1.3                  | https://www.xiph.org/oggz/                                           |
 | [`libopenal`](libopenal/)                       | OpenAL soft                                                   | 1.24.3                 | https://openal-soft.org/                                             |

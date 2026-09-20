@@ -11,7 +11,6 @@ set(TEST_SOURCES
     null-deref-close-during-select.cpp
     null-deref-crash-during-pthread_join.cpp
     path-resolution-race.cpp
-    pthread-cond-timedwait-example.cpp
     setpgid-across-sessions-without-leader.cpp
     siginfo-example.cpp
     stress-truncate.cpp
@@ -64,6 +63,7 @@ set(LIBTEST_BASED_SOURCES
     TestSignalDispatch.cpp
     TestSymlink.cpp
     TestTCPSocket.cpp
+    TestUDPSocket.cpp
     TestWXProtection.cpp
 )
 
