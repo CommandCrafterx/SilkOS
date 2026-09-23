@@ -13,8 +13,9 @@
 
 namespace Web::CSS {
 
-CSSRule::CSSRule(JS::Realm& realm)
+CSSRule::CSSRule(JS::Realm& realm, Type type)
     : PlatformObject(realm)
+    , m_type(type)
 {
 }
 
@@ -23,6 +24,17 @@ void CSSRule::visit_edges(Cell::Visitor& visitor)
     Base::visit_edges(visitor);
     visitor.visit(m_parent_style_sheet);
     visitor.visit(m_parent_rule);
+}
+
+// https://www.w3.org/TR/cssom/#dom-cssrule-type
+WebIDL::UnsignedShort CSSRule::type_for_bindings() const
+{
+    // NOTE: Types that aren't defined in the spec must return 0.
+    // To do this, we arbitrarily make non-spec ones start at 100.
+    auto type = to_underlying(m_type);
+    if (type >= 100)
+        return 0;
+    return type;
 }
 
 // https://www.w3.org/TR/cssom/#dom-cssrule-csstext
@@ -81,6 +93,7 @@ FlyString const& CSSRule::parent_layer_internal_qualified_name_slow_case() const
         case Type::Namespace:
         case Type::Supports:
         case Type::NestedDeclarations:
+        case Type::Property:
             break;
         }
     }

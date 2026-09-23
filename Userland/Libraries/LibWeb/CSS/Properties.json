@@ -1905,6 +1905,9 @@
       "percentage [0,∞]"
     ],
     "valid-identifiers": [
+      "fit-content",
+      "max-content",
+      "min-content",
       "none"
     ],
     "percentages-resolve-to": "length",
@@ -1948,7 +1951,9 @@
     ],
     "valid-identifiers": [
       "auto",
-      "none"
+      "fit-content",
+      "max-content",
+      "min-content"
     ],
     "percentages-resolve-to": "length",
     "quirks": [
@@ -1974,8 +1979,7 @@
       "auto",
       "fit-content",
       "max-content",
-      "min-content",
-      "none"
+      "min-content"
     ],
     "percentages-resolve-to": "length",
     "quirks": [

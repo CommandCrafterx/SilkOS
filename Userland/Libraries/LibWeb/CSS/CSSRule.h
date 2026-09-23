@@ -12,6 +12,7 @@
 #include <LibWeb/Bindings/PlatformObject.h>
 #include <LibWeb/CSS/CSSStyleDeclaration.h>
 #include <LibWeb/CSS/Selector.h>
+#include <LibWeb/WebIDL/Types.h>
 
 namespace Web::CSS {
 
@@ -22,7 +23,7 @@ public:
     virtual ~CSSRule() = default;
 
     // https://drafts.csswg.org/cssom/#dom-cssrule-type
-    enum class Type : u16 {
+    enum class Type : WebIDL::UnsignedShort {
         Style = 1,
         Import = 3,
         Media = 4,
@@ -35,9 +36,11 @@ public:
         LayerBlock = 100,
         LayerStatement = 101,
         NestedDeclarations = 102,
+        Property = 103,
     };
 
-    virtual Type type() const = 0;
+    Type type() const { return m_type; }
+    WebIDL::UnsignedShort type_for_bindings() const;
 
     String css_text() const;
     void set_css_text(StringView);
@@ -56,7 +59,7 @@ public:
     virtual String serialized() const = 0;
 
 protected:
-    explicit CSSRule(JS::Realm&);
+    explicit CSSRule(JS::Realm&, Type);
 
     virtual void visit_edges(Cell::Visitor&) override;
 
@@ -71,6 +74,7 @@ protected:
 
     [[nodiscard]] FlyString const& parent_layer_internal_qualified_name_slow_case() const;
 
+    Type m_type;
     JS::GCPtr<CSSRule> m_parent_rule;
     JS::GCPtr<CSSStyleSheet> m_parent_style_sheet;
 

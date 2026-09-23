@@ -271,7 +271,6 @@ char* asctime_r(const struct tm* tm, char* buffer)
     return buffer;
 }
 
-// FIXME: Some formats are not supported.
 size_t strftime(char* destination, size_t max_size, char const* format, const struct tm* tm)
 {
     tzset();
@@ -283,6 +282,9 @@ size_t strftime(char* destination, size_t max_size, char const* format, const st
         if (format[i] != '%') {
             builder.append(format[i]);
         } else {
+            bool has_e_modifier = false;
+            bool has_o_modifier = false;
+        continue_reading_operator:
             if (++i >= format_len)
                 return 0;
 
@@ -299,6 +301,16 @@ size_t strftime(char* destination, size_t max_size, char const* format, const st
             case 'B':
                 builder.append(long_month_names[tm->tm_mon]);
                 break;
+            case 'c':
+                builder.appendff("{} {} {:2} {:02}:{:02}:{:02} {}",
+                    short_day_names[tm->tm_wday],
+                    short_month_names[tm->tm_mon],
+                    tm->tm_mday,
+                    tm->tm_hour,
+                    tm->tm_min,
+                    tm->tm_sec,
+                    tm->tm_year + 1900);
+                break;
             case 'C':
                 builder.appendff("{:02}", (tm->tm_year + 1900) / 100);
                 break;
@@ -310,6 +322,22 @@ size_t strftime(char* destination, size_t max_size, char const* format, const st
                 break;
             case 'e':
                 builder.appendff("{:2}", tm->tm_mday);
+                break;
+            case 'E':
+                if (has_e_modifier || has_o_modifier)
+                    return 0;
+                has_e_modifier = true;
+                goto continue_reading_operator;
+            case 'F':
+                builder.appendff("{}-{:02}-{:02}", tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
+                break;
+            case 'G':
+                dbgln("FIXME: Compute the week-based year instead of using the normal year.");
+                builder.appendff("{}", tm->tm_year + 1900);
+                break;
+            case 'g':
+                dbgln("FIXME: Compute the week-based year instead of using the normal year.");
+                builder.appendff("{:02}", (tm->tm_year + 1900) % 100);
                 break;
             case 'h':
                 builder.append(short_month_names[tm->tm_mon]);
@@ -336,6 +364,11 @@ size_t strftime(char* destination, size_t max_size, char const* format, const st
             case 'n':
                 builder.append('\n');
                 break;
+            case 'O':
+                if (has_e_modifier || has_o_modifier)
+                    return 0;
+                has_o_modifier = true;
+                goto continue_reading_operator;
             case 'p':
                 builder.append(tm->tm_hour < 12 ? "AM"sv : "PM"sv);
                 break;
@@ -388,17 +421,31 @@ size_t strftime(char* destination, size_t max_size, char const* format, const st
                 builder.appendff("{}", tm->tm_wday);
                 break;
             case 'W': {
-                int const wday_of_year_beginning = (tm->tm_wday + 6 + 6 * tm->tm_yday) % 7;
-                int const week_number = (tm->tm_yday + wday_of_year_beginning) / 7;
+                // "The first Monday of January is the first day of week 1;
+                // days in the new year before this are in week 0."
+                int const beginning_week_1 = (tm->tm_yday - tm->tm_wday + 1) % 7;
+                int week_number = (tm->tm_yday - beginning_week_1) / 7;
+                if (tm->tm_yday >= tm->tm_wday - 1)
+                    week_number++;
                 builder.appendff("{:02}", week_number);
                 break;
             }
+            case 'x':
+                builder.appendff("{:02}/{:02}/{:02}", tm->tm_mon + 1, tm->tm_mday, (tm->tm_year + 1900) % 100);
+                break;
+            case 'X':
+                builder.appendff("{:02}:{:02}:{:02}", tm->tm_hour, tm->tm_min, tm->tm_sec);
+                break;
             case 'y':
                 builder.appendff("{:02}", (tm->tm_year + 1900) % 100);
                 break;
             case 'Y':
                 builder.appendff("{}", tm->tm_year + 1900);
                 break;
+            case 'z':
+            case 'Z':
+                dbgln("FIXME: Unsupported format in strftime: %z/%Z");
+                return 0;
             case '%':
                 builder.append('%');
                 break;

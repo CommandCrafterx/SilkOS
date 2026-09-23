@@ -19,12 +19,14 @@
 #include <LibJS/Runtime/TypedArray.h>
 #include <LibJS/Runtime/VM.h>
 #include <LibWasm/AbstractMachine/Validator.h>
+#include <LibWeb/Platform/EventLoopPlugin.h>
 #include <LibWeb/WebAssembly/Instance.h>
 #include <LibWeb/WebAssembly/Memory.h>
 #include <LibWeb/WebAssembly/Module.h>
 #include <LibWeb/WebAssembly/Table.h>
 #include <LibWeb/WebAssembly/WebAssembly.h>
 #include <LibWeb/WebIDL/Buffers.h>
+#include <LibWeb/WebIDL/Promise.h>
 
 namespace Web::WebAssembly {
 
@@ -79,26 +81,25 @@ bool validate(JS::VM& vm, JS::Handle<WebIDL::BufferSource>& bytes)
 }
 
 // https://webassembly.github.io/spec/js-api/#dom-webassembly-compile
-WebIDL::ExceptionOr<JS::Value> compile(JS::VM& vm, JS::Handle<WebIDL::BufferSource>& bytes)
+WebIDL::ExceptionOr<JS::NonnullGCPtr<WebIDL::Promise>> compile(JS::VM& vm, JS::Handle<WebIDL::BufferSource>& bytes)
 {
     auto& realm = *vm.current_realm();
 
     // FIXME: This shouldn't block!
     auto compiled_module_or_error = Detail::parse_module(vm, bytes->raw_object());
-    auto promise = JS::Promise::create(realm);
-
+    auto promise = WebIDL::create_promise(realm);
     if (compiled_module_or_error.is_error()) {
-        promise->reject(*compiled_module_or_error.release_error().value());
+        WebIDL::reject_promise(realm, promise, compiled_module_or_error.error_value());
     } else {
         auto module_object = vm.heap().allocate<Module>(realm, realm, compiled_module_or_error.release_value());
-        promise->fulfill(module_object);
+        WebIDL::resolve_promise(realm, promise, module_object);
     }
 
     return promise;
 }
 
 // https://webassembly.github.io/spec/js-api/#dom-webassembly-instantiate
-WebIDL::ExceptionOr<JS::Value> instantiate(JS::VM& vm, JS::Handle<WebIDL::BufferSource>& bytes, Optional<JS::Handle<JS::Object>>& import_object)
+WebIDL::ExceptionOr<JS::NonnullGCPtr<WebIDL::Promise>> instantiate(JS::VM& vm, JS::Handle<WebIDL::BufferSource>& bytes, Optional<JS::Handle<JS::Object>>& import_object)
 {
     // FIXME: Implement the importObject parameter.
     (void)import_object;
@@ -107,10 +108,10 @@ WebIDL::ExceptionOr<JS::Value> instantiate(JS::VM& vm, JS::Handle<WebIDL::Buffer
 
     // FIXME: This shouldn't block!
     auto compiled_module_or_error = Detail::parse_module(vm, bytes->raw_object());
-    auto promise = JS::Promise::create(realm);
+    auto promise = WebIDL::create_promise(realm);
 
     if (compiled_module_or_error.is_error()) {
-        promise->reject(*compiled_module_or_error.release_error().value());
+        WebIDL::reject_promise(realm, promise, compiled_module_or_error.error_value());
         return promise;
     }
 
@@ -118,7 +119,7 @@ WebIDL::ExceptionOr<JS::Value> instantiate(JS::VM& vm, JS::Handle<WebIDL::Buffer
     auto result = Detail::instantiate_module(vm, compiled_module->module);
 
     if (result.is_error()) {
-        promise->reject(*result.release_error().value());
+        WebIDL::reject_promise(realm, promise, result.error_value());
     } else {
         auto module_object = vm.heap().allocate<Module>(realm, realm, move(compiled_module));
         auto instance_object = vm.heap().allocate<Instance>(realm, realm, result.release_value());
@@ -126,29 +127,30 @@ WebIDL::ExceptionOr<JS::Value> instantiate(JS::VM& vm, JS::Handle<WebIDL::Buffer
         auto object = JS::Object::create(realm, nullptr);
         object->define_direct_property("module", module_object, JS::default_attributes);
         object->define_direct_property("instance", instance_object, JS::default_attributes);
-        promise->fulfill(object);
+        WebIDL::resolve_promise(realm, promise, object);
     }
 
     return promise;
 }
 
 // https://webassembly.github.io/spec/js-api/#dom-webassembly-instantiate-moduleobject-importobject
-WebIDL::ExceptionOr<JS::Value> instantiate(JS::VM& vm, Module const& module_object, Optional<JS::Handle<JS::Object>>& import_object)
+WebIDL::ExceptionOr<JS::NonnullGCPtr<WebIDL::Promise>> instantiate(JS::VM& vm, Module const& module_object, Optional<JS::Handle<JS::Object>>& import_object)
 {
     // FIXME: Implement the importObject parameter.
     (void)import_object;
 
     auto& realm = *vm.current_realm();
-    auto promise = JS::Promise::create(realm);
+    auto promise = WebIDL::create_promise(realm);
 
+    // FIXME: This shouldn't block!
     auto const& compiled_module = module_object.compiled_module();
     auto result = Detail::instantiate_module(vm, compiled_module->module);
 
     if (result.is_error()) {
-        promise->reject(*result.release_error().value());
+        WebIDL::reject_promise(realm, promise, result.error_value());
     } else {
         auto instance_object = vm.heap().allocate<Instance>(realm, realm, result.release_value());
-        promise->fulfill(instance_object);
+        WebIDL::resolve_promise(realm, promise, instance_object);
     }
 
     return promise;
@@ -164,9 +166,9 @@ JS::ThrowCompletionOr<NonnullOwnPtr<Wasm::ModuleInstance>> instantiate_module(JS
     auto& cache = get_cache(*vm.current_realm());
     if (!import_argument.is_undefined()) {
         auto import_object = TRY(import_argument.to_object(vm));
-        dbgln("Trying to resolve stuff because import object was specified");
+        dbgln_if(LIBWEB_WASM_DEBUG, "Trying to resolve stuff because import object was specified");
         for (Wasm::Linker::Name const& import_name : linker.unresolved_imports()) {
-            dbgln("Trying to resolve {}::{}", import_name.module, import_name.name);
+            dbgln_if(LIBWEB_WASM_DEBUG, "Trying to resolve {}::{}", import_name.module, import_name.name);
             auto value_or_error = import_object->get(import_name.module);
             if (value_or_error.is_error())
                 break;
@@ -181,7 +183,7 @@ JS::ThrowCompletionOr<NonnullOwnPtr<Wasm::ModuleInstance>> instantiate_module(JS
             auto import_ = import_or_error.release_value();
             TRY(import_name.type.visit(
                 [&](Wasm::TypeIndex index) -> JS::ThrowCompletionOr<void> {
-                    dbgln("Trying to resolve a function {}::{}, type index {}", import_name.module, import_name.name, index.value());
+                    dbgln_if(LIBWEB_WASM_DEBUG, "Trying to resolve a function {}::{}, type index {}", import_name.module, import_name.name, index.value());
                     auto& type = module.type_section().types()[index.value()];
                     // FIXME: IsCallable()
                     if (!import_.is_function())
@@ -228,7 +230,7 @@ JS::ThrowCompletionOr<NonnullOwnPtr<Wasm::ModuleInstance>> instantiate_module(JS
                         ByteString::formatted("func{}", resolved_imports.size()),
                     };
                     auto address = cache.abstract_machine().store().allocate(move(host_function));
-                    dbgln("Resolved to {}", address->value());
+                    dbgln_if(LIBWEB_WASM_DEBUG, "Resolved to {}", address->value());
                     // FIXME: LinkError instead.
                     VERIFY(address.has_value());
 
