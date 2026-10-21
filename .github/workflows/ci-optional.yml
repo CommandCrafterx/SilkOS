@@ -1,0 +1,60 @@
+name: Optional CI (manual)
+
+# Kept for future use. These jobs do not run on push or pull requests;
+# start them from the Actions tab with "Run workflow".
+on:
+  workflow_dispatch:
+    inputs:
+      clang:
+        description: 'Run Clang x86_64 SerenityOS build'
+        type: boolean
+        default: false
+      riscv64:
+        description: 'Run GCC RISC-V SerenityOS build'
+        type: boolean
+        default: false
+      lagom:
+        description: 'Run Lagom host builds and tests (Linux no-fuzz, Linux fuzz, macOS)'
+        type: boolean
+        default: false
+
+jobs:
+  Clang:
+    name: SerenityOS (Clang, x86_64)
+    if: ${{ github.repository == 'CommandCrafterx/SilkOS' && inputs.clang }}
+    uses: ./.github/workflows/serenity-template.yml
+    with:
+      toolchain: 'Clang'
+      os: ubuntu-24.04
+      arch: 'x86_64'
+      debug_options: 'NORMAL_DEBUG'
+
+  RISCV:
+    name: SerenityOS (GCC, riscv64)
+    if: ${{ github.repository == 'CommandCrafterx/SilkOS' && inputs.riscv64 }}
+    uses: ./.github/workflows/serenity-template.yml
+    with:
+      toolchain: 'GNU'
+      os: ubuntu-24.04
+      arch: 'riscv64'
+      debug_options: 'NORMAL_DEBUG'
+
+  Lagom:
+    name: Lagom
+    if: ${{ github.repository == 'CommandCrafterx/SilkOS' && inputs.lagom }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os_name: ['Linux']
+        os: [ubuntu-24.04]
+        fuzzer: ['NO_FUZZ', 'FUZZ']
+        include:
+          - os_name: 'macOS'
+            os: macos-15
+            fuzzer: 'NO_FUZZ'
+    uses: ./.github/workflows/lagom-template.yml
+    with:
+      toolchain: 'Clang'
+      os_name: ${{ matrix.os_name }}
+      os: ${{ matrix.os }}
+      fuzzer: ${{ matrix.fuzzer }}

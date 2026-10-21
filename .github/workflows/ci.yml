@@ -1,0 +1,34 @@
+name: CI
+
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || format('{0}-{1}', github.ref, github.run_number) }}
+  cancel-in-progress: true
+
+jobs:
+  # Default push/PR CI: GCC on x86_64 and aarch64.
+  # Clang, RISC-V, and Lagom runs are kept in ci-optional.yml as manual-only jobs.
+  SerenityOS:
+    if: github.repository == 'CommandCrafterx/SilkOS'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - toolchain: 'GNU'
+            os: ubuntu-24.04
+            arch: 'x86_64'
+            debug_options: 'NORMAL_DEBUG'
+
+          - toolchain: 'GNU'
+            os: ubuntu-24.04
+            arch: 'aarch64'
+            debug_options: 'NORMAL_DEBUG'
+
+    uses: ./.github/workflows/serenity-template.yml
+    with:
+      toolchain: ${{ matrix.toolchain }}
+      os: ${{ matrix.os }}
+      arch: ${{ matrix.arch }}
+      debug_options: ${{ matrix.debug_options }}
