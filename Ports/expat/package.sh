@@ -1,8 +1,8 @@
 #!/usr/bin/env -S bash ../.port_include.sh
 port='expat'
-version='2.8.4'
-versionpath='2_8_4'
+version='2.9.0'
+versionpath='2_9_0'
 useconfigure='true'
 files=(
-    "https://github.com/libexpat/libexpat/releases/download/R_${versionpath}/expat-${version}.tar.xz#656ae1cc8da3b4ea513bb4e254f33e6243938084c0ec6239da873376b09985a7"
+    "https://github.com/libexpat/libexpat/releases/download/R_${versionpath}/expat-${version}.tar.xz#1e6371862cc31999b368c3b89b49994f0677e1bab5f1b2b85ae3741f5d803051"
 )

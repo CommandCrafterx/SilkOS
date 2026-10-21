@@ -18,7 +18,7 @@ endif()
 
 # Check for toolchain mismatch, user might need to rebuild toolchain
 set(GCC_VERSION "16.2.0")
-set(LLVM_VERSION "24.0.0git (fcf4bb1af7450f618504201610ef8c3ef52844d7)")
+set(LLVM_VERSION "24.0.0git (da1619509ae0aa985846ef8a52dd45db1118b2bc)")
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(COMPILER_VERSION "${CMAKE_CXX_COMPILER_VERSION}")
     set(EXPECTED_COMPILER_VERSION "${GCC_VERSION}")
@@ -259,6 +259,22 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang$" OR ENABLE_MOLD_LINKER)
 elseif("${SERENITY_ARCH}" STREQUAL "x86_64")
     # The BFD linker only supports RELR relocations on x86 and POWER.
     add_link_options(LINKER:-z,pack-relative-relocs)
+endif()
+
+# Escape hatch target to prevent runtime startup libraries from having coverage enabled
+# at awkward points in program initialization
+add_library(NoCoverage INTERFACE)
+
+if (ENABLE_USERSPACE_COVERAGE_COLLECTION)
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang$")
+        add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
+        add_link_options(-fprofile-instr-generate -fcoverage-mapping)
+
+        target_compile_options(NoCoverage INTERFACE -fno-profile-generate -fno-profile-instr-use -fno-profile-instr-generate -fno-coverage-mapping)
+        target_link_options(NoCoverage INTERFACE -fno-profile-generate -fno-profile-instr-use -fno-profile-instr-generate -fno-coverage-mapping)
+    else()
+        message(FATAL_ERROR "ENABLE_USERSPACE_COVERAGE_COLLECTION not supported yet for ${CMAKE_CXX_COMPILER_ID}")
+    endif()
 endif()
 
 add_subdirectory(Userland)

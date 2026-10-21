@@ -54,6 +54,44 @@ TEST_CASE(fmod)
     EXPECT_EQ(fmod(-3000.0, -3.0), -0.0);
 }
 
+TEST_CASE(fdim)
+{
+#define TEST_FDIM_FOR(suffix)                     \
+    EXPECT_EQ(fdim##suffix(2.0f, 1.0f), 1.0f);    \
+    EXPECT_EQ(fdim##suffix(1.0f, 2.0f), 0.0f);    \
+    EXPECT_EQ(fdim##suffix(-1.0f, -2.0f), 1.0f);  \
+    EXPECT_EQ(fdim##suffix(-2.0f, -1.0f), 0.0f);  \
+    EXPECT(!signbit(fdim##suffix(-0.0f, -0.0f))); \
+    EXPECT(isnan(fdim##suffix(NAN, 1.0)));        \
+    EXPECT(isnan(fdim##suffix(1.0, NAN)));        \
+    EXPECT(isnan(fdim##suffix(NAN, NAN)));
+
+    TEST_FDIM_FOR();
+    TEST_FDIM_FOR(f);
+    TEST_FDIM_FOR(l);
+}
+
+TEST_CASE(remquo)
+{
+    int quo;
+
+#define TEST_REMQUO_FOR(suffix)                          \
+    EXPECT_EQ(remquo##suffix(5.0f, 3.0f, &quo), -1.0f);  \
+    EXPECT_EQ(quo, 2);                                   \
+    EXPECT_EQ(remquo##suffix(5.0f, -3.0f, &quo), -1.0f); \
+    EXPECT_EQ(quo, -2);                                  \
+    EXPECT_EQ(remquo##suffix(8.0f, 3.0f, &quo), -1.0f);  \
+    EXPECT_EQ(quo, 3);                                   \
+    EXPECT_EQ(remquo##suffix(9.0f, 3.0f, &quo), 0.0f);   \
+    EXPECT_EQ(quo, 3);                                   \
+    EXPECT(isnan(remquo##suffix(NAN, 2.0, &quo)));       \
+    EXPECT(isnan(remquo##suffix(2.0, NAN, &quo)));
+
+    TEST_REMQUO_FOR();
+    TEST_REMQUO_FOR(f);
+    TEST_REMQUO_FOR(l);
+}
+
 TEST_CASE(atan2)
 {
     EXPECT_APPROXIMATE(atan2(-1, -0.0e0), -M_PI_2);
@@ -233,6 +271,14 @@ TEST_CASE(nextafter)
     EXPECT_EQ(nextafter_translator(Extractor(0x1, 0x419, 0x7d78400000000), Extractor(0x0, 0x0, 0x0)), Extractor(0x1, 0x419, 0x7d783ffffffff));
     EXPECT_EQ(nextafter_translator(Extractor(0x1, 0x419, 0x7d78404000000), Extractor(0x1, 0x3ff, 0x0)), Extractor(0x1, 0x419, 0x7d78403ffffff));
     EXPECT_EQ(nextafter_translator(Extractor(0x1, 0x419, 0x7d78400000000), Extractor(0x0, 0x0, 0x1)), Extractor(0x1, 0x419, 0x7d783ffffffff));
+
+#define TEST_NEXTAFTER_FOR(suffix)                  \
+    EXPECT_EQ(nextafter##suffix(0.0f, 0.0f), 0.0f); \
+    EXPECT_EQ(nextafter##suffix(0.0f, -0.0f), 0.0f);
+
+    TEST_NEXTAFTER_FOR();
+    TEST_NEXTAFTER_FOR(f);
+    TEST_NEXTAFTER_FOR(l);
 }
 
 TEST_CASE(scalbn)
@@ -277,21 +323,15 @@ TEST_CASE(gamma)
     EXPECT(isnan(tgamma(-INFINITY)));
     EXPECT(isnan(tgamma(-5)));
 
-    // TODO: Stirling approximation is not precise for small values.
-    //       Eyeballed from the graph on https://en.wikipedia.org/wiki/Stirling%27s_approximation,
-    //       we should use another approximation for x < 2.
-    // EXPECT_APPROXIMATE(tgamma(0.5), sqrt(M_PI));
+    EXPECT_APPROXIMATE_WITH_ERROR(tgamma(0.5), sqrt(M_PI), 1e-10);
     EXPECT_EQ(tgammal(21.0l), 2'432'902'008'176'640'000.0l);
     EXPECT_EQ(tgamma(19.0), 6'402'373'705'728'000.0);
     EXPECT_EQ(tgammaf(11.0f), 3628800.0f);
     EXPECT_EQ(tgamma(4.0), 6);
 
-    // The stirling approximation for log(gamma(x)) is O(log(x)), so the error
-    // of 10 is well inside the range. That being said, we're off the expected
-    // results because our log(x) is not precise.
     // Expected results are from WolframAlpha.
-    EXPECT_APPROXIMATE_WITH_ERROR(lgamma(128738941), 2275241556.917756, 10);
-    EXPECT_APPROXIMATE_WITH_ERROR(lgamma(128738943), 2275241594.264350, 10);
+    EXPECT_APPROXIMATE_WITH_ERROR(lgamma(128738941), 2275241556.917756, 1e-6);
+    EXPECT_APPROXIMATE_WITH_ERROR(lgamma(128738943), 2275241594.264350, 1e-6);
 
     EXPECT_EQ(lgamma(1.0), 0.0);
     EXPECT_EQ(lgamma(2.0), 0.0);
@@ -300,7 +340,7 @@ TEST_CASE(gamma)
     EXPECT(isnan(lgamma(NAN)));
     EXPECT(isinf(lgamma(INFINITY)));
     EXPECT(isinf(lgamma(-INFINITY)));
-    EXPECT_EQ(signgam, 1);
+    EXPECT_EQ(signgam, -1); // This is not specified by POSIX.
     lgamma(-2.5);
     EXPECT_EQ(signgam, -1);
 }
@@ -393,6 +433,7 @@ TEST_CASE(round)
     EXPECT_EQ(round##suffix(-0.125##suffix), 0.##suffix); \
     EXPECT_EQ(round##suffix(0.5##suffix), 1.0##suffix);   \
     EXPECT_EQ(round##suffix(-0.5##suffix), -1.0##suffix); \
+    EXPECT_EQ(round##suffix(1.0##suffix), 1.0##suffix);   \
     EXPECT_EQ(round##suffix(0.25##suffix), 0.##suffix);   \
     EXPECT_EQ(round##suffix(-0.25##suffix), 0.##suffix);  \
     EXPECT_EQ(round##suffix(-3.0##suffix / 2.0##suffix), -2.0##suffix);
@@ -469,4 +510,15 @@ TEST_CASE(exp)
     EXPECT_EQ(exp(-AK::Infinity<double>), 0.0);
 
     EXPECT_EQ(exp(AK::Infinity<double>), AK::Infinity<double>);
+}
+
+TEST_CASE(erf)
+{
+    EXPECT(isnan(erf(AK::NaN<double>)));
+
+    EXPECT_EQ(erf(0.0), 0.0);
+    EXPECT(signbit(erf(-0.0)));
+
+    EXPECT_EQ(erf(-AK::Infinity<double>), -1.);
+    EXPECT_EQ(erf(+AK::Infinity<double>), +1.);
 }

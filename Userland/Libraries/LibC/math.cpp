@@ -8,6 +8,7 @@
  */
 
 #include <AK/BuiltinWrappers.h>
+#include <AK/Concepts.h>
 #include <AK/FloatingPoint.h>
 #if ARCH(X86_64)
 #    include <AK/FPControl.h>
@@ -66,15 +67,15 @@ static FloatType internal_to_integer(FloatType x, RoundingMode rounding_mode)
         auto dead_bitcount = Extractor::mantissa_bits - unbiased_exponent;
         // Avoid shifting by the integer type's size since that's UB.
         auto dead_mask = dead_bitcount == sizeof(typename Extractor::ComponentType) * 8 ? ~zero : (one << dead_bitcount) - 1;
-        auto dead_bits = extractor.mantissa & dead_mask;
-        extractor.mantissa &= ~dead_mask;
 #ifdef AK_HAS_FLOAT_80
-        if constexpr (IsSame<f80, FloatType>) {
+        if constexpr (IsSame<FloatType, f80>) {
             // x86 80-bit extended floating point requires the top mantissa bit to always be 1, or we get a special Intel NaN.
-            if (extractor.mantissa == 0)
-                extractor.mantissa = one << (Extractor::mantissa_bits - 1);
+            VERIFY(extractor.mantissa >> (Extractor::mantissa_bits - 1u));
+            dead_mask >>= 1u;
         }
 #endif
+        auto dead_bits = extractor.mantissa & dead_mask;
+        extractor.mantissa &= ~dead_mask;
 
         auto nonhalf_fraction_mask = dead_mask >> 1;
         has_nonhalf_fraction = (dead_bits & nonhalf_fraction_mask) != 0;
@@ -112,10 +113,17 @@ static FloatType internal_to_integer(FloatType x, RoundingMode rounding_mode)
     return result;
 }
 
+// https://pubs.opengroup.org/onlinepubs/9799919799/functions/nextafter.html
 // This is much branchier than it really needs to be
-template<typename FloatType>
-static FloatType internal_nextafter(FloatType x, bool up)
+template<FloatingPoint F1, FloatingPoint F2>
+static F1 internal_nextafter(F1 x, F2 target)
 {
+    // "If x==y, y (of the type x) shall be returned."
+    if (x == target)
+        return target;
+
+    bool up = target > x;
+
     if (!isfinite(x))
         return x;
     using Extractor = FloatExtractor<decltype(x)>;
@@ -267,50 +275,55 @@ static FloatT internal_scalbn(FloatT x, int exponent) NOEXCEPT
     return extractor.to_float();
 }
 
-template<typename FloatT>
-static FloatT internal_gamma(FloatT x) NOEXCEPT
+// https://pubs.opengroup.org/onlinepubs/9799919799/functions/fdim.html
+template<FloatingPoint T>
+static T internal_fdim(T x, T y)
 {
-    if (isnan(x))
-        return (FloatT)NAN;
-
-    if (x == (FloatT)0.0)
-        return signbit(x) ? (FloatT)-INFINITY : (FloatT)INFINITY;
-
-    if (x < (FloatT)0 && (rintl(x) == x || isinf(x)))
-        return (FloatT)NAN;
-
-    if (isinf(x))
-        return (FloatT)INFINITY;
-
-    using Extractor = FloatExtractor<FloatT>;
-    // These constants were obtained through use of WolframAlpha
-    constexpr long long max_integer_whose_factorial_fits = (Extractor::mantissa_bits == FloatExtractor<long double>::mantissa_bits ? 20 : (Extractor::mantissa_bits == FloatExtractor<double>::mantissa_bits ? 18 : (Extractor::mantissa_bits == FloatExtractor<float>::mantissa_bits ? 10 : 0)));
-    static_assert(max_integer_whose_factorial_fits != 0, "internal_gamma needs to be aware of the integer factorial that fits in this floating point type.");
-    if ((int)x == x && x <= max_integer_whose_factorial_fits + 1) {
-        long long result = 1;
-        for (long long cursor = 2; cursor < (long long)x; cursor++)
-            result *= cursor;
-        return (FloatT)result;
-    }
-
-    // Stirling approximation
-    return sqrtl(2.0 * M_PIl / static_cast<long double>(x)) * powl(static_cast<long double>(x) / M_El, static_cast<long double>(x));
+    if (isnan(x) || isnan(y))
+        return AK::NaN<T>;
+    return max(x - y, 0);
 }
 
-template<typename Float>
-Float internal_lgamma(Float value, int* sign)
+// https://pubs.opengroup.org/onlinepubs/9799919799/functions/remquo.html
+template<FloatingPoint T>
+static T internal_remquo(T x, T y, int* quo)
 {
-    if (value == static_cast<Float>(1.0) || value == static_cast<Float>(2.0))
-        return 0.0;
-    if (isinf(value) || value == static_cast<Float>(0.0))
-        return INFINITY;
+    if (isnan(x) || isnan(y))
+        return AK::NaN<T>;
 
-    // Use the Stirling approximation for log(gamma(x)) directly.
-    // This allows us to support bigger values of x, where gamma(x) would have returned inf.
-    // https://en.wikipedia.org/wiki/Stirling%27s_approximation
-    Float result = value * AK::log(value) - value;
-    *sign = signbit(result) ? -1 : 1;
-    return result;
+    // "In the object pointed to by quo, they store a value whose sign is the sign of x/y and
+    // whose magnitude is congruent modulo 2n to the magnitude of the integral quotient of x/y,
+    // where n is an implementation-defined integer greater than or equal to 3.
+    *quo = AK::rint(x / y);
+
+    // "The remquo(), remquof(), and remquol() functions shall compute the same remainder as
+    // the remainder(), remainderf(), and remainderl() functions, respectively."
+    return AK::remainder(x, y);
+}
+
+template<FloatingPoint T>
+static T internal_erf(T x)
+{
+    // If x is NaN, a NaN shall be returned.
+    if (isnan(x))
+        return AK::NaN<T>;
+
+    // If x is ±0, ±0 shall be returned.
+    if (x == 0)
+        return x;
+
+    // If x is ±Inf, ±1 shall be returned.
+    if (isinf(x))
+        return AK::copysign<T>(1., x);
+
+    // algorithm taken from Abramowitz and Stegun (no. 26.2.17)
+    T t = 1 / (1 + 0.47047l * AK::fabs(x));
+    T poly = t * (0.3480242l + t * (-0.958798l + t * 0.7478556l));
+    T answer = 1 - poly * AK::exp(-x * x);
+    if (x < 0)
+        return -answer;
+
+    return answer;
 }
 
 extern "C" {
@@ -378,6 +391,7 @@ MAKE_AK_BACKED1(exp);
 MAKE_AK_BACKED1(exp2);
 MAKE_AK_BACKED1(fabs);
 MAKE_AK_BACKED1(rint);
+MAKE_AK_BACKED1(tgamma);
 
 MAKE_AK_BACKED2(atan2);
 MAKE_AK_BACKED2(hypot);
@@ -882,21 +896,6 @@ double gamma(double x) NOEXCEPT
     return sqrt(2.0 * M_PI / x) * pow(x / M_E, x);
 }
 
-long double tgammal(long double value) NOEXCEPT
-{
-    return internal_gamma(value);
-}
-
-double tgamma(double value) NOEXCEPT
-{
-    return internal_gamma(value);
-}
-
-float tgammaf(float value) NOEXCEPT
-{
-    return internal_gamma(value);
-}
-
 int signgam = 0;
 
 long double lgammal(long double value) NOEXCEPT
@@ -916,17 +915,17 @@ float lgammaf(float value) NOEXCEPT
 
 long double lgammal_r(long double value, int* sign) NOEXCEPT
 {
-    return internal_lgamma(value, sign);
+    return AK::lgamma_r(value, sign);
 }
 
 double lgamma_r(double value, int* sign) NOEXCEPT
 {
-    return internal_lgamma(value, sign);
+    return AK::lgamma_r(value, sign);
 }
 
 float lgammaf_r(float value, int* sign) NOEXCEPT
 {
-    return internal_lgamma(value, sign);
+    return AK::lgamma_r(value, sign);
 }
 
 long double expm1l(long double x) NOEXCEPT
@@ -961,24 +960,17 @@ float log1pf(float x) NOEXCEPT
 
 long double erfl(long double x) NOEXCEPT
 {
-    // algorithm taken from Abramowitz and Stegun (no. 26.2.17)
-    long double t = 1 / (1 + 0.47047l * fabsl(x));
-    long double poly = t * (0.3480242l + t * (-0.958798l + t * 0.7478556l));
-    long double answer = 1 - poly * expl(-x * x);
-    if (x < 0)
-        return -answer;
-
-    return answer;
+    return internal_erf(x);
 }
 
 double erf(double x) NOEXCEPT
 {
-    return (double)erfl(x);
+    return internal_erf(x);
 }
 
 float erff(float x) NOEXCEPT
 {
-    return (float)erf(x);
+    return internal_erf(x);
 }
 
 long double erfcl(long double x) NOEXCEPT
@@ -998,42 +990,32 @@ float erfcf(float x) NOEXCEPT
 
 double nextafter(double x, double target) NOEXCEPT
 {
-    if (x == target)
-        return target;
-    return internal_nextafter(x, target >= x);
+    return internal_nextafter(x, target);
 }
 
 float nextafterf(float x, float target) NOEXCEPT
 {
-    if (x == target)
-        return target;
-    return internal_nextafter(x, target >= x);
+    return internal_nextafter(x, target);
 }
 
 long double nextafterl(long double x, long double target) NOEXCEPT
 {
-    return internal_nextafter(x, target >= x);
+    return internal_nextafter(x, target);
 }
 
 double nexttoward(double x, long double target) NOEXCEPT
 {
-    if (x == target)
-        return target;
-    return internal_nextafter(x, target >= x);
+    return internal_nextafter(x, target);
 }
 
 float nexttowardf(float x, long double target) NOEXCEPT
 {
-    if (x == target)
-        return target;
-    return internal_nextafter(x, target >= x);
+    return internal_nextafter(x, target);
 }
 
 long double nexttowardl(long double x, long double target) NOEXCEPT
 {
-    if (x == target)
-        return target;
-    return internal_nextafter(x, target >= x);
+    return internal_nextafter(x, target);
 }
 
 float copysignf(float x, float y) NOEXCEPT
@@ -1141,6 +1123,21 @@ float fminf(float x, float y) NOEXCEPT
     return x < y ? x : y;
 }
 
+double fdim(double x, double y) NOEXCEPT
+{
+    return internal_fdim(x, y);
+}
+
+float fdimf(float x, float y) NOEXCEPT
+{
+    return internal_fdim(x, y);
+}
+
+long double fdiml(long double x, long double y) NOEXCEPT
+{
+    return internal_fdim(x, y);
+}
+
 // https://pubs.opengroup.org/onlinepubs/9699919799/functions/fma.html
 long double fmal(long double x, long double y, long double z) NOEXCEPT
 {
@@ -1155,6 +1152,21 @@ double fma(double x, double y, double z) NOEXCEPT
 float fmaf(float x, float y, float z) NOEXCEPT
 {
     return (x * y) + z;
+}
+
+double remquo(double x, double y, int* quo) NOEXCEPT
+{
+    return internal_remquo(x, y, quo);
+}
+
+float remquof(float x, float y, int* quo) NOEXCEPT
+{
+    return internal_remquo(x, y, quo);
+}
+
+long double remquol(long double x, long double y, int* quo) NOEXCEPT
+{
+    return internal_remquo(x, y, quo);
 }
 
 long double nearbyintl(long double value) NOEXCEPT

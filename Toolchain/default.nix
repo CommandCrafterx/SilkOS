@@ -31,6 +31,7 @@ mkShell.override { stdenv = gccStdenv; } {
     autoconf
     automake
     bison
+    bmake
     gperf
     imagemagick
     libtool
@@ -44,7 +45,7 @@ mkShell.override { stdenv = gccStdenv; } {
     meson
     nasm
     perl
-    tcl-9_0
+    tcl-9_1
     wayland-scanner
     # For development
     # NOTE: The unwrapped clang package is used because the one installed by `clang-tools`

@@ -490,6 +490,7 @@ elseif("${SERENITY_ARCH}" STREQUAL "aarch64")
         Arch/aarch64/RPi/RP1/RP1.cpp
         Arch/aarch64/RPi/RP1/xHCI.cpp
         Arch/aarch64/RPi/SDHostController.cpp
+        Arch/aarch64/RPi/BroadcomSTBGPIOController.cpp
         Arch/aarch64/RPi/Timer.cpp
         Arch/aarch64/RPi/V3D/DeviceNode.cpp
         Arch/aarch64/RPi/V3D/PageTable.cpp
@@ -720,10 +721,7 @@ add_compile_options(-nostdlib)
 add_compile_options(-ftrivial-auto-var-init=pattern)
 
 # Zero any registers used within a function on return (to reduce data lifetime and ROP gadgets).
-# This is not implemented for RISC-V on Clang.
-if (NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND "${SERENITY_ARCH}" STREQUAL "riscv64"))
-    add_compile_options(-fzero-call-used-regs=used-gpr)
-endif()
+add_compile_options(-fzero-call-used-regs=used-gpr)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(TARGET_STRING "")
