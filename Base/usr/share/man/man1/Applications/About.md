@@ -18,5 +18,4 @@ On the left is the official Silkball logo. Made by CommandCrafterx and FlipartYT
 
 Since there are no official releases of the project, the version number is denoted as `1.0-dev` and the revision number reflects the latest Git commit's hash.
 
-
 To learn more about SilkOS visit the [homepage](https://silk-project.github.io).
