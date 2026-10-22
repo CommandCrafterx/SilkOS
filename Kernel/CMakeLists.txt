@@ -240,7 +240,8 @@ set(KERNEL_SOURCES
     FileSystem/VirtualFileSystem.cpp
     Firmware/ACPI/Initialize.cpp
     Firmware/ACPI/Parser.cpp
-    Firmware/ACPI/StaticParsing.cpp
+    Firmware/ACPI/SysFSComponent.cpp
+    Firmware/ACPI/SysFSDirectory.cpp
     Firmware/DeviceTree/Device.cpp
     Firmware/DeviceTree/DeviceTree.cpp
     Firmware/DeviceTree/Management.cpp
@@ -637,6 +638,10 @@ set(AK_SOURCES
     ../AK/UUID.cpp
 )
 
+set(ACPI_SOURCES
+    ../Userland/Libraries/LibACPI/Table.cpp
+)
+
 set(DT_SOURCES
     ../Userland/Libraries/LibDeviceTree/DeviceTree.cpp
     ../Userland/Libraries/LibDeviceTree/FlattenedDeviceTree.cpp
@@ -840,6 +845,7 @@ set(SOURCES
     ${KERNEL_SOURCES}
     ${GENERATED_SOURCES}
     ${AK_SOURCES}
+    ${ACPI_SOURCES}
     ${DT_SOURCES}
     ${EDID_SOURCES}
     ${ELF_SOURCES}
