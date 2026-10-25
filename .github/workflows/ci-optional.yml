@@ -6,11 +6,11 @@ on:
   workflow_dispatch:
     inputs:
       clang:
-        description: 'Run Clang x86_64 SerenityOS build'
+        description: 'Run Clang x86_64 SilkOS build'
         type: boolean
         default: false
       riscv64:
-        description: 'Run GCC RISC-V SerenityOS build'
+        description: 'Run GCC RISC-V SilkOS build'
         type: boolean
         default: false
       lagom:
@@ -20,7 +20,7 @@ on:
 
 jobs:
   Clang:
-    name: SerenityOS (Clang, x86_64)
+    name: SilkOS (Clang, x86_64)
     if: ${{ github.repository == 'CommandCrafterx/SilkOS' && inputs.clang }}
     uses: ./.github/workflows/serenity-template.yml
     with:
@@ -30,7 +30,7 @@ jobs:
       debug_options: 'NORMAL_DEBUG'
 
   RISCV:
-    name: SerenityOS (GCC, riscv64)
+    name: SilkOS (GCC, riscv64)
     if: ${{ github.repository == 'CommandCrafterx/SilkOS' && inputs.riscv64 }}
     uses: ./.github/workflows/serenity-template.yml
     with:

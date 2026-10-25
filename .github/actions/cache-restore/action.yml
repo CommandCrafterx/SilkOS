@@ -24,7 +24,7 @@ inputs:
     required: false
     default: '0'
   serenity_ccache_path:
-    description: 'Path to the SerenityOS ccache directory'
+    description: 'Path to the SilkOS ccache directory'
     required: false
     default: ''
   toolchain_ccache_path:
@@ -42,7 +42,7 @@ inputs:
 
 outputs:
   serenity_ccache_primary_key:
-    description: 'Primary key for the Serenity ccache'
+    description: 'Primary key for the SilkOS ccache'
     value: ${{ steps.serenity-ccache.outputs.cache-primary-key }}
   toolchain_ccache_primary_key:
     description: 'Primary key for the Toolchain ccache'
@@ -137,7 +137,7 @@ runs:
           CCACHE_DIR=${{ inputs.toolchain_ccache_path }} ccache -s
           CCACHE_DIR=${{ inputs.toolchain_ccache_path }} ccache -z
 
-    - name: 'Serenity Compiler Cache'
+    - name: 'SilkOS Compiler Cache'
       uses: actions/cache/restore@v6
       id: 'serenity-ccache'
       if: ${{ inputs.serenity_ccache_path != '' }}
@@ -147,7 +147,7 @@ runs:
           restore-keys: |
               "ccache" | "${{ inputs.os }}" | "${{ inputs.arch }}" | "${{ inputs.toolchain }}" | "${{ inputs.cache_key_extra }}" | "${{ inputs.ccache_version }}"
 
-    - name: 'Configure Serenity ccache'
+    - name: 'Configure SilkOS ccache'
       if: ${{ inputs.serenity_ccache_path != '' }}
       shell: bash
       run: |

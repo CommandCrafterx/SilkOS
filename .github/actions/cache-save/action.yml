@@ -8,11 +8,11 @@ inputs:
     required: false
     default: 'x86_64'
   serenity_ccache_path:
-    description: 'Path to the SerenityOS ccache directory'
+    description: 'Path to the SilkOS ccache directory'
     required: false
     default: ''
   serenity_ccache_primary_key:
-    description: 'Primary key for the Serenity ccache'
+    description: 'Primary key for the SilkOS ccache'
     required: false
     default: ''
   toolchain_ccache_path:
@@ -90,7 +90,7 @@ runs:
       run: |
         CCACHE_DIR=${{ inputs.serenity_ccache_path }} ccache --evict-older-than=1d
 
-    - name: 'Serenity Compiler Cache'
+    - name: 'SilkOS Compiler Cache'
       uses: actions/cache/save@v6
       if: ${{ github.event_name != 'pull_request' && inputs.serenity_ccache_path != '' }}
       with:
@@ -103,7 +103,7 @@ runs:
         echo "Toolchain Compiler Cache"
         CCACHE_DIR=${{ inputs.toolchain_ccache_path }} ccache -s
 
-        echo "Serenity Compiler Cache"
+        echo "SilkOS Compiler Cache"
         CCACHE_DIR=${{ inputs.serenity_ccache_path }} ccache -s
 
     - name: 'Show cache storage'

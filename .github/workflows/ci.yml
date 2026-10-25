@@ -9,7 +9,8 @@ concurrency:
 jobs:
   # Default push/PR CI: GCC on x86_64 and aarch64.
   # Clang, RISC-V, and Lagom runs are kept in ci-optional.yml as manual-only jobs.
-  SerenityOS:
+  SilkOS:
+    name: SilkOS (${{ matrix.toolchain }}, ${{ matrix.arch }})
     if: github.repository == 'CommandCrafterx/SilkOS'
 
     strategy:

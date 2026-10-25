@@ -1,4 +1,4 @@
-name: SerenityOS Template
+name: SilkOS Template
 
 on:
   workflow_call:
@@ -133,7 +133,7 @@ jobs:
 
       # === BUILD ===
 
-      - name: Build Serenity and Tests
+      - name: Build SilkOS and Tests
         working-directory: ${{ github.workspace }}/Build/superbuild
         run: cmake --build .
         env:
@@ -157,7 +157,7 @@ jobs:
 
       # === TEST ===
 
-      - name: Create Serenity Rootfs
+      - name: Create SilkOS Rootfs
         if: ${{ inputs.debug_options == 'NORMAL_DEBUG' }}
         working-directory: ${{ steps.build-parameters.outputs.build_directory }}
         run: ninja install && ninja qemu-image
@@ -190,7 +190,7 @@ jobs:
         timeout-minutes: 60
 
       - name: Print Target Logs
-        # Extremely useful if Serenity hangs trying to run one of the tests
+        # Extremely useful if SilkOS hangs trying to run one of the tests
         if: ${{ !cancelled() && inputs.debug_options == 'NORMAL_DEBUG'}}
         working-directory: ${{ steps.build-parameters.outputs.build_directory }}
         run: '[ ! -e debug.log ] || cat debug.log'
@@ -212,6 +212,6 @@ jobs:
         if: ${{ inputs.coverage == 'ON' && github.event_name != 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
-          name: serenity-coverage
+          name: silkos-coverage
           path: ${{ steps.build-parameters.outputs.build_directory }}/reports
           retention-days: 90
