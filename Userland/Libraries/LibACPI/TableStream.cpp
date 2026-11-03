@@ -8,6 +8,10 @@
 #include <LibACPI/OpcodeFilters.h>
 #include <LibACPI/TableStream.h>
 
+#ifdef KERNEL
+#    define warnln dbgln
+#endif
+
 namespace ACPI::AML {
 
 // https://uefi.org/specs/ACPI/6.6/20_AML_Specification.html#defblockheader
@@ -43,6 +47,33 @@ ErrorOr<u32> TableStream::read_package_length()
     }
 
     return value;
+}
+
+// https://uefi.org/specs/ACPI/6.6/20_AML_Specification.html#stringprefix
+ErrorOr<ByteBuffer> TableStream::read_string()
+{
+    size_t start = offset();
+
+    u8 b = TRY(read_value<u8>());
+    if (b == 0)
+        return ByteBuffer::create_uninitialized(0);
+
+    do {
+        if (b > 0x7f) {
+            warnln("Invalid character in string: {} at offset {}", b, offset());
+            return Error::from_string_view_or_print_error_and_return_errno("Invalid character in string!"sv, EINVAL);
+        }
+
+        b = TRY(read_value<u8>());
+    } while (b != 0);
+
+    size_t size = offset() - start;
+    TRY(seek(start));
+
+    auto span = TRY(read_in_place<u8 const>(size - 1));
+    // Skip over null byte so it doesn't end up in the buffer.
+    TRY(seek(1, SeekMode::FromCurrentPosition));
+    return ByteBuffer::copy(span);
 }
 
 // https://uefi.org/specs/ACPI/6.6/20_AML_Specification.html#namestring

@@ -44,7 +44,7 @@ This list is also available at [ports.serenityos.net](https://ports.serenityos.n
 | [`ClassiCube`](ClassiCube/)                     | ClassiCube                                                    | 1.3.9                 | https://github.com/UnknownShadow200/ClassiCube                       |
 | [`cmake`](cmake/)                               | CMake                                                         | 3.30.3                | https://cmake.org/                                                   |
 | [`cmatrix`](cmatrix/)                           | cmatrix                                                       | 5c082c6               | https://github.com/abishekvashok/cmatrix                             |
-| [`composer`](composer/)                         | Composer                                                      | 2.10.3                | https://getcomposer.org/                                             |
+| [`composer`](composer/)                         | Composer                                                      | 2.11.1                | https://getcomposer.org/                                             |
 | [`coreutils`](coreutils/)                       | GNU core utilities                                            | 9.12                  | https://www.gnu.org/software/coreutils/                              |
 | [`cowsay`](cowsay/)                             | cowsay                                                        | 3.04                  | https://github.com/tnalpgge/rank-amateur-cowsay                      |
 | [`cpio`](cpio/)                                 | GNU cpio archive utility                                      | 2.15                  | https://www.gnu.org/software/cpio/                                   |
@@ -90,7 +90,7 @@ This list is also available at [ports.serenityos.net](https://ports.serenityos.n
 | [`freeciv`](freeciv/)                           | Freeciv                                                       | 3.2.6                 | http://freeciv.org/                                                  |
 | [`freedink`](freedink/)                         | FreeDink                                                      | 109.6                 | https://www.gnu.org/software/freedink/                               |
 | [`freetype`](freetype/)                         | FreeType                                                      | 2.15.0                | https://www.freetype.org/                                            |
-| [`fribidi`](fribidi/)                           | GNU FriBidi                                                   | 1.0.17                | https://github.com/fribidi/fribidi                                   |
+| [`fribidi`](fribidi/)                           | GNU FriBidi                                                   | 1.0.18                | https://github.com/fribidi/fribidi                                   |
 | [`frotz`](frotz/)                               | Frotz                                                         | 2.55                  | https://gitlab.com/DavidGriffith/frotz                               |
 | [`fuse-exfat`](fuse-exfat/)                     | fuse-exfat                                                    | 1.4.0                 | https://gitlab.com/relan/exfat                                       |
 | [`gawk`](gawk/)                                 | GNU awk                                                       | 5.3.1                 | https://www.gnu.org/software/gawk/                                   |
@@ -145,7 +145,7 @@ This list is also available at [ports.serenityos.net](https://ports.serenityos.n
 | [`lame`](lame/)                                 | LAME Ain't an MP3 Encoder                                     | 4.0                   | https://lame.sourceforge.io/                                         |
 | [`lcms2`](lcms2/)                               | Small-footprint color management engine                       | 2.19.1                | https://github.com/mm2/Little-CMS                                    |
 | [`less`](less/)                                 | less                                                          | 710                   | https://www.greenwoodsoftware.com/less/                              |
-| [`libarchive`](libarchive/)                     | libarchive                                                    | 3.8.10                | https://libarchive.org/                                              |
+| [`libarchive`](libarchive/)                     | libarchive                                                    | 3.8.11                | https://libarchive.org/                                              |
 | [`libassuan`](libassuan/)                       | libassuan                                                     | 3.0.2                 | https://gnupg.org/software/libassuan/index.html                      |
 | [`libatomic_ops`](libatomic_ops/)               | libatomic_ops                                                 | 7.10.0                | https://github.com/bdwgc/libatomic_ops/                              |
 | [`libenet`](libenet/)                           | libenet                                                       | 1.3.18                | http://sauerbraten.org/enet/                                         |
@@ -158,7 +158,7 @@ This list is also available at [ports.serenityos.net](https://ports.serenityos.n
 | [`libgcrypt`](libgcrypt/)                       | libgcrypt                                                     | 1.12.4                | https://gnupg.org/software/libgcrypt/index.html                      |
 | [`libgd`](libgd/)                               | libgd                                                         | 2.3.3                 | https://libgd.github.io/                                             |
 | [`libgpg-error`](libgpg-error/)                 | libgpg-error                                                  | 1.61                  | https://gnupg.org/software/libgpg-error/index.html                   |
-| [`libiconv`](libiconv/)                         | GNU libiconv                                                  | 1.19                  | https://www.gnu.org/software/libiconv/                               |
+| [`libiconv`](libiconv/)                         | GNU libiconv                                                  | 1.19.1                | https://www.gnu.org/software/libiconv/                               |
 | [`libicu`](libicu/)                             | ICU                                                           | 79.1                  | http://site.icu-project.org/                                         |
 | [`libjodycode`](libjodycode/)                   | libjodycode                                                   | 4.2                   | https://codeberg.org/jbruchon/libjodycode                            |
 | [`libjpeg`](libjpeg/)                           | libjpeg                                                       | 10                    | https://ijg.org/                                                     |
@@ -166,7 +166,7 @@ This list is also available at [ports.serenityos.net](https://ports.serenityos.n
 | [`libksba`](libksba/)                           | libksba                                                       | 1.8.1                 | https://gnupg.org/software/libksba/index.html                        |
 | [`liblzf`](liblzf/)                             | LibLZF is a very small data compression library               | 3.6                   | http://software.schmorp.de/pkg/liblzf.html                           |
 | [`libmad`](libmad/)                             | libmad                                                        | 0.16.5                | https://codeberg.org/tenacityteam/libmad                             |
-| [`libmikmod`](libmikmod/)                       | libmikmod                                                     | 3.3.15                | http://mikmod.sourceforge.net/                                       |
+| [`libmikmod`](libmikmod/)                       | libmikmod                                                     | 3.3.16                | http://mikmod.sourceforge.net/                                       |
 | [`libmodplug`](libmodplug/)                     | libmodplug                                                    | 0.8.9.0               | http://modplug-xmms.sourceforge.net/                                 |
 | [`libmpeg2`](libmpeg2/)                         | libmpeg2                                                      | 0.5.1                 | https://libmpeg2.sourceforge.io/                                     |
 | [`libmpg123`](libmpg123/)                       | libmpg123                                                     | 1.33.7                | https://www.mpg123.de/                                               |
@@ -180,7 +180,7 @@ This list is also available at [ports.serenityos.net](https://ports.serenityos.n
 | [`libpuffy`](libpuffy/)                         | libpuffy                                                      | 1.0                   | https://github.com/ibara/libpuffy                                    |
 | [`libsamplerate`](libsamplerate/)               | libsamplerate                                                 | 0.2.2                 | https://libsndfile.github.io/libsamplerate/                          |
 | [`libsixel`](libsixel/)                         | libsixel                                                      | 1.10.5                | https://github.com/libsixel/libsixel                                 |
-| [`libslirp`](libslirp/)                         | libslirp                                                      | 4.9.5                 | https://gitlab.freedesktop.org/slirp/libslirp                        |
+| [`libslirp`](libslirp/)                         | libslirp                                                      | 4.9.7                 | https://gitlab.freedesktop.org/slirp/libslirp                        |
 | [`libsndfile`](libsndfile/)                     | libsndfile                                                    | 1.2.2                 | https://libsndfile.github.io/libsndfile/                             |
 | [`libsodium`](libsodium/)                       | libsodium                                                     | 1.0.22                | https://doc.libsodium.org/                                           |
 | [`libssh2`](libssh2/)                           | libssh2                                                       | 1.11.1                | https://www.libssh2.org/                                             |
@@ -207,7 +207,7 @@ This list is also available at [ports.serenityos.net](https://ports.serenityos.n
 | [`luajit`](luajit/)                             | LuaJIT                                                        | 18b087c               | https://luajit.org/luajit.html                                       |
 | [`luarocks`](luarocks/)                         | LuaRocks                                                      | 3.13.0                | https://luarocks.org/                                                |
 | [`lure`](lure/)                                 | Lure of the Temptress                                         | 1.1                   | https://www.scummvm.org/games/#games-lure                            |
-| [`luv`](luv/)                                   | Bare libuv bindings for lua                                   | 1.53.0-0              | https://github.com/luvit/luv                                         |
+| [`luv`](luv/)                                   | Bare libuv bindings for lua                                   | 1.53.0-1              | https://github.com/luvit/luv                                         |
 | [`lxt`](lxt/)                                   | linuXtree - an XTree Gold clone                               | 1.3c                  | http://stahlke.org/dan/lxt/                                          |
 | [`lynx`](lynx/)                                 | Lynx web browser                                              | 2.9.3                 | https://lynx.invisible-island.net/                                   |
 | [`lz4`](lz4/)                                   | lz4 - Extremely Fast Compression algorithm                    | 1.10.0                | https://github.com/lz4/lz4                                           |
@@ -267,7 +267,7 @@ This list is also available at [ports.serenityos.net](https://ports.serenityos.n
 | [`pacman`](pacman/)                             | Pacman                                                        | b6241a3               | https://github.com/ebuc99/pacman                                     |
 | [`pango`](pango/)                               | Pango                                                         | 1.54.0                | https://gitlab.gnome.org/GNOME/pango                                 |
 | [`patch`](patch/)                               | patch (GNU)                                                   | 2.8.1                 | https://savannah.gnu.org/projects/patch/                             |
-| [`patchelf`](patchelf/)                         | Utility for modifying existing ELF executables and libraries  | 0.19.2                | https://github.com/NixOS/patchelf/                                   |
+| [`patchelf`](patchelf/)                         | Utility for modifying existing ELF executables and libraries  | 0.19.3                | https://github.com/NixOS/patchelf/                                   |
 | [`pcre`](pcre/)                                 | Perl-compatible Regular Expressions (PCRE)                    | 8.45                  | https://www.pcre.org/                                                |
 | [`pcre2`](pcre2/)                               | Perl-compatible Regular Expressions (PCRE2)                   | 10.49                 | https://www.pcre.org/                                                |
 | [`perl5`](perl5/)                               | Perl                                                          | 5.44.0                | https://www.perl.org/                                                |
@@ -283,8 +283,8 @@ This list is also available at [ports.serenityos.net](https://ports.serenityos.n
 | [`protobuf`](protobuf/)                         | Protocol Buffers                                              | 36.2                  | https://protobuf.dev/                                                |
 | [`pt2-clone`](pt2-clone/)                       | ProTracker 2 clone                                            | 1.92                  | https://github.com/8bitbubsy/pt2-clone                               |
 | [`pv`](pv/)                                     | Pipe Viewer                                                   | 1.12.0                | http://www.ivarch.com/programs/pv.shtml                              |
-| [`python3`](python3/)                           | Python                                                        | 3.15.1                | https://www.python.org/                                              |
-| [`qemu`](qemu/)                                 | QEMU                                                          | 11.1.2                | https://qemu.org                                                     |
+| [`python3`](python3/)                           | Python                                                        | 3.15.2                | https://www.python.org/                                              |
+| [`qemu`](qemu/)                                 | QEMU                                                          | 11.1.3                | https://qemu.org                                                     |
 | [`qoi`](qoi/)                                   | Quite OK Image Format for fast, lossless image compression    | 351450e               | https://github.com/phoboslab/qoi                                     |
 | [`quake`](quake/)                               | Quake                                                         | 0.65                  | https://github.com/SerenityOS/SerenityQuake                          |
 | [`quake2`](quake2/)                             | QuakeII                                                       | 0.1                   | https://github.com/shamazmazum/quake2sdl                             |
@@ -353,7 +353,7 @@ This list is also available at [ports.serenityos.net](https://ports.serenityos.n
 | [`tuxracer`](tuxracer/)                         | Tux Racer                                                     | 0.61                  | http://tuxracer.sourceforge.net/                                     |
 | [`unibilium`](unibilium/)                       | Unibilium                                                     | 2.1.4                 | https://github.com/neovim/unibilium                                  |
 | [`utf8proc`](utf8proc/)                         | utf8proc                                                      | 2.12.0                | https://juliastrings.github.io/utf8proc/                             |
-| [`vim`](vim/)                                   | Vim                                                           | 9.2.1225              | https://www.vim.org/                                                 |
+| [`vim`](vim/)                                   | Vim                                                           | 9.2.1254              | https://www.vim.org/                                                 |
 | [`vitetris`](vitetris/)                         | vitetris                                                      | 0.59.1                | https://github.com/vicgeralds/vitetris                               |
 | [`vlang`](vlang/)                               | V programming language                                        | weekly.2021.31        | https://github.com/vlang/v                                           |
 | [`vttest`](vttest/)                             | vttest                                                        | 20251205              | https://invisible-island.net/vttest/                                 |

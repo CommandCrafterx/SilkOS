@@ -61,16 +61,25 @@ ErrorOr<void> Node::write_description(StringBuilder& builder)
 
 ErrorOr<void> NameNode::write_description(StringBuilder& builder)
 {
-    if (m_data.is<u64>()) {
-        auto value = MUST(m_data.as<u64>());
-        TRY(builder.try_appendff("(Decimal: {}, Hexadecimal: {:X})", value, value));
-    } else if (m_data.is<NameString>()) {
-        auto value = MUST(m_data.as<NameString>());
-        TRY(builder.try_appendff("{}"sv, TRY(value.to_string())));
-    } else {
-        TRY(builder.try_append("Invalid"sv));
-    }
+    TRY(builder.try_appendff("{}"sv, m_data));
+    return {};
+}
 
+ErrorOr<void> MethodNode::write_description(StringBuilder& builder)
+{
+    TRY(builder.try_appendff("Method(Table: {}, Arguments: {}, Start: {}, End: {}, Flags: {})", m_table_index, argument_count(), m_start, m_end, m_flags));
+    return {};
+}
+
+ErrorOr<void> OperationRegionNode::write_description(StringBuilder& builder)
+{
+    TRY(builder.try_appendff("OperationRegion(Space: {}, Offset: {}, Length: {})", m_space_raw, m_offset, m_length));
+    return {};
+}
+
+ErrorOr<void> FieldNode::write_description(StringBuilder& builder)
+{
+    TRY(builder.try_appendff("Field(Flags: {}, Offset: {}, Length: {})", m_flags, m_offset, m_length));
     return {};
 }
 

@@ -89,16 +89,24 @@ struct [[gnu::packed]] x86_Specific_Flags {
 };
 };
 
+// https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#generic-address-structure
 namespace GenericAddressStructure {
 
 enum class AddressSpace : u8 {
-    SystemMemory = 0,
-    SystemIO = 1,
-    PCIConfigurationSpace = 2,
-    EmbeddedController = 3,
-    SMBus = 4,
-    PCC = 0xA,
-    FunctionalFixedHardware = 0x7F
+    SystemMemory = 0x00,
+    SystemIO = 0x01,
+    PCIConfigurationSpace = 0x02,
+    EmbeddedController = 0x03,
+    SMBus = 0x04,
+    SystemCMOS = 0x05,
+    PCIBarTarget = 0x06,
+    IPMI = 0x07,
+    GPIO = 0x08,
+    GenericSerialBus = 0x09,
+    PlatformCommunicationsChannel = 0x0A,
+    PlatformRuntimeMechanism = 0x0B,
+    FunctionalFixedHardware = 0x7F,
+    OEMDefined = 0x80,
 };
 
 enum class AccessSize : u8 {
@@ -162,6 +170,7 @@ struct [[gnu::packed]] XSDT {
     u64 table_ptrs[];
 };
 
+// https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#generic-address-structure
 struct [[gnu::packed]] GenericAddressStructure {
     ::ACPI::GenericAddressStructure::AddressSpace address_space;
     ::ACPI::GenericAddressStructure::BitWidth bit_width;
