@@ -28,6 +28,8 @@ enum class OperandType : u8 {
 
     DataRefObject,
     PackageElement,
+    SuperName,
+    Target,
 
     MarkAsCount,
     RepeatNextBytes,
@@ -37,15 +39,16 @@ enum class OperandType : u8 {
 
 class OpcodeFrame {
 public:
-    static ErrorOr<OpcodeFrame> from_opcode(Opcode opcode, size_t start);
+    static ErrorOr<OpcodeFrame> from_opcode(Opcode opcode, size_t start, Optional<ReadonlySpan<OperandType>> operand_template = {});
     static ErrorOr<OpcodeFrame> root_frame();
 
     bool filter_opcode_for_next_operand(Opcode opcode);
 
     ErrorOr<OperandType> begin_operand(size_t current_offset);
     ErrorOr<void> finish_operand(size_t current_offset);
-    ErrorOr<void> finish_operand(Object const& operand, size_t current_offset);
+    ErrorOr<void> finish_operand(Object&& operand, size_t current_offset);
 
+    Object& operand(size_t index) { return m_operands[index]; }
     Object const& operand(size_t index) const { return m_operands[index]; }
     size_t operand_count() const { return m_operands.size(); }
 

@@ -117,13 +117,6 @@ enum class AccessSize : u8 {
     QWord = 4
 };
 
-enum class BitWidth : u8 {
-    Undefined = 0,
-    Byte = 8,
-    Word = 16,
-    DWord = 32,
-    QWord = 64
-};
 }
 
 namespace Structures {
@@ -173,10 +166,15 @@ struct [[gnu::packed]] XSDT {
 // https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#generic-address-structure
 struct [[gnu::packed]] GenericAddressStructure {
     ::ACPI::GenericAddressStructure::AddressSpace address_space;
-    ::ACPI::GenericAddressStructure::BitWidth bit_width;
+    u8 bit_width;
     u8 bit_offset;
     ::ACPI::GenericAddressStructure::AccessSize access_size;
     u64 address;
+
+    [[nodiscard]] bool is_null() const
+    {
+        return to_underlying(address_space) == 0 && bit_width == 0 && bit_offset == 0 && to_underlying(access_size) == 0 && address == 0;
+    }
 };
 
 struct [[gnu::packed]] HPET {
@@ -345,6 +343,27 @@ struct [[gnu::packed]] DSDT {
     unsigned char definition_block[];
 };
 
+// https://uefi.org/specs/ACPI/6.6/04_ACPI_Hardware_Specification.html#pm1-control-registers-fixed-hardware-feature-control-bits
+struct [[gnu::packed]] PM1ControlRegister {
+    bool SCI_EN : 1;
+    bool BM_RLD : 1;
+    bool GBL_RS : 1;
+    u16 : 7;
+    u16 SLP_TYPx : 3;
+    bool SLP_EN : 1;
+    u16 : 2;
+};
+static_assert(AssertSize<PM1ControlRegister, 2>());
+
+// https://uefi.org/specs/ACPI/6.6/04_ACPI_Hardware_Specification.html#sleep-control-register
+struct [[gnu::packed]] SleepControlRegister {
+    u8 : 2;
+    u8 SLP_TYPx : 3;
+    bool SLP_EN : 1;
+    u8 : 1;
+};
+static_assert(AssertSize<SleepControlRegister, 1>());
+
 }
 
 namespace AML {
@@ -481,7 +500,17 @@ enum class Opcode : u16 {
     Arg4Op = 0x6C,
     Arg5Op = 0x6D,
     Arg6Op = 0x6E,
+
+    // NOTE: This is not a real opcode, but it's used internally to represent name string evaluation
+    NodeEvaluation = 0xFFFF,
 };
+
+struct MethodFlags {
+    u8 argument_count : 3;
+    u8 serialized : 1;
+    u8 sync_level : 4;
+};
+static_assert(sizeof(MethodFlags) == 1);
 
 }
 

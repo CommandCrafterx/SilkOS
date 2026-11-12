@@ -9,12 +9,18 @@
 #include <AK/ByteBuffer.h>
 #include <AK/Format.h>
 #include <AK/Forward.h>
+#include <AK/Noncopyable.h>
 #include <AK/StringView.h>
 #include <stdarg.h>
 
 namespace AK {
 
 class StringBuilder {
+#ifdef KERNEL
+    AK_MAKE_NONCOPYABLE(StringBuilder);
+    AK_MAKE_DEFAULT_MOVABLE(StringBuilder);
+#endif
+
 public:
     static constexpr size_t inline_capacity = 256;
 
@@ -22,7 +28,11 @@ public:
 
     static ErrorOr<StringBuilder> create(size_t initial_capacity = inline_capacity);
 
+#ifdef KERNEL
+    StringBuilder() = default;
+#else
     explicit StringBuilder(size_t initial_capacity = inline_capacity);
+#endif
 
     enum class UseInlineCapacityOnly {
         Yes,
@@ -48,10 +58,9 @@ public:
     ErrorOr<void> try_append_repeated(char, size_t);
     ErrorOr<void> try_append_escaped_for_json(StringView);
 
-    void append(StringView);
 #ifndef KERNEL
+    void append(StringView);
     void append(Utf16View const&);
-#endif
     void append(Utf32View const&);
     void append(char);
     void append_code_point(u32);
@@ -69,7 +78,6 @@ public:
         MUST(vformat(*this, fmtstr.view(), variadic_format_params));
     }
 
-#ifndef KERNEL
     [[nodiscard]] ByteString to_byte_string() const;
 #endif
 
