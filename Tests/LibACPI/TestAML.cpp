@@ -59,10 +59,32 @@ TEST_CASE(data_objects_and_named_objects)
     auto package = TRY_OR_FAIL(interpreter->evaluate("\\PKG0"sv));
     EXPECT(package.is<ACPI::AML::Package>());
     auto package_data = MUST(package.release_as<ACPI::AML::Package>());
-    EXPECT_EQ(package_data.package().size(), 3u);
+    EXPECT_EQ(package_data.package().size(), 4u);
+
+    EXPECT(package_data.package()[0].is<u64>());
     EXPECT_EQ(MUST(package_data.package()[0].as<u64>()), 0ul);
+
+    EXPECT(package_data.package()[1].is<u64>());
     EXPECT_EQ(MUST(package_data.package()[1].as<u64>()), 1ul);
+
+    EXPECT(package_data.package()[2].is<u64>());
     EXPECT_EQ(MUST(package_data.package()[2].as<u64>()), 42ul);
+
+    EXPECT(package_data.package()[3].is_empty());
+
+    auto var_package = TRY_OR_FAIL(interpreter->evaluate("\\VPK1"sv));
+    EXPECT(var_package.is<ACPI::AML::Package>());
+    auto var_package_data = MUST(var_package.release_as<ACPI::AML::Package>());
+    EXPECT_EQ(var_package_data.package().size(), 512u);
+
+    EXPECT(var_package_data.package()[0].is<u64>());
+    EXPECT_EQ(MUST(var_package_data.package()[0].as<u64>()), 0ul);
+
+    EXPECT(var_package_data.package()[1].is<ACPI::AML::String>());
+    auto var_package_string = MUST(var_package_data.package()[1].as_pointer<ACPI::AML::String>());
+    EXPECT_EQ(StringView(StringView(var_package_string->buffer())), "hello"sv);
+
+    EXPECT(var_package_data.package()[511].is_empty());
 
     auto device_value = TRY_OR_FAIL(interpreter->evaluate("\\DEV0.VAL0"sv));
     EXPECT_EQ(MUST(device_value.as<u64>()), 0x1234ul);
@@ -126,4 +148,71 @@ TEST_CASE(binary_operations)
     test_function("\\TOR_"sv, 0xF0F0, 0x0FF0, 0xFFF0);
     test_function("\\TNOR"sv, 0xF0F0, 0x0FF0, 0xFFFF000F);
     test_function("\\TXOR"sv, 0xF0F0, 0x0FF0, 0xFF00);
+}
+
+TEST_CASE(empty_methods)
+{
+    auto interpreter = TRY_OR_FAIL(load_test_table("empty_method.aml"sv));
+
+    auto result = TRY_OR_FAIL(interpreter->evaluate("\\_SB_.EMPT"sv));
+    EXPECT(result.is_empty());
+}
+
+TEST_CASE(method_call)
+{
+    auto interpreter = TRY_OR_FAIL(load_test_table("method_call.aml"sv));
+
+    Vector<ACPI::AML::Object> arguments;
+    MUST(arguments.try_append(ACPI::AML::Object(u64(1000))));
+    MUST(arguments.try_append(ACPI::AML::Object(u64(337))));
+
+    auto result = TRY_OR_FAIL(interpreter->evaluate("\\_SB_.CALC"sv, arguments));
+    EXPECT_EQ(MUST(result.as<u64>()), 1337ul);
+}
+
+TEST_CASE(if_else)
+{
+    auto interpreter = TRY_OR_FAIL(load_test_table("if_else.aml"sv));
+
+    Vector<ACPI::AML::Object> arguments;
+    MUST(arguments.try_append(ACPI::AML::Object(u64(1))));
+
+    auto result = TRY_OR_FAIL(interpreter->evaluate("\\_SB_.TIF1"sv, arguments));
+    EXPECT_EQ(MUST(result.as<u64>()), 0x1ul);
+
+    arguments.clear();
+    MUST(arguments.try_append(ACPI::AML::Object(u64(2))));
+
+    result = TRY_OR_FAIL(interpreter->evaluate("\\_SB_.TIF1"sv, arguments));
+    EXPECT_EQ(MUST(result.as<u64>()), 0x2ul);
+
+    result = TRY_OR_FAIL(interpreter->evaluate("\\_SB_.TIF2"sv, arguments));
+    EXPECT_EQ(MUST(result.as<u64>()), 0x1ul);
+
+    result = TRY_OR_FAIL(interpreter->evaluate("\\_SB_.TIF3"sv, arguments));
+    EXPECT_EQ(MUST(result.as<u64>()), 0x2ul);
+
+    result = TRY_OR_FAIL(interpreter->evaluate("\\_SB_.TIF4"sv, arguments));
+    EXPECT_EQ(MUST(result.as<u64>()), 0x2ul);
+
+    result = TRY_OR_FAIL(interpreter->evaluate("\\_SB_.TIF5"sv, arguments));
+    EXPECT_EQ(MUST(result.as<u64>()), 0x1ul);
+
+    result = TRY_OR_FAIL(interpreter->evaluate("\\_SB_.TIF6"sv, arguments));
+    EXPECT_EQ(MUST(result.as<u64>()), 0x2ul);
+
+    arguments.clear();
+    MUST(arguments.try_append(ACPI::AML::Object(u64(1))));
+    MUST(arguments.try_append(ACPI::AML::Object(u64(0))));
+
+    result = TRY_OR_FAIL(interpreter->evaluate("\\_SB_.TIF7"sv, arguments));
+    EXPECT_EQ(MUST(result.as<u64>()), 0x1ul);
+}
+
+TEST_CASE(alias)
+{
+    auto interpreter = TRY_OR_FAIL(load_test_table("alias.aml"sv));
+
+    auto result = TRY_OR_FAIL(interpreter->evaluate("\\_SB_.TST0"sv));
+    EXPECT_EQ(MUST(result.as<u64>()), 0x1234ul);
 }

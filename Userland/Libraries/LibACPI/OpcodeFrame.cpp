@@ -16,55 +16,70 @@
 namespace ACPI::AML {
 
 // https://uefi.org/specs/ACPI/6.6/20_AML_Specification.html#aml-byte-stream-byte-values
-constexpr static Array<OperandType, 1> EMPTY_OPERANDS = { OperandType::End };
+constexpr static auto EMPTY_OPERANDS = to_array({ OperandType::End });
 
-constexpr static Array<OperandType, 3> SCOPE_OPERANDS = { OperandType::PackageLength, OperandType::NameString, OperandType::End };
-constexpr static Array<OperandType, 3> NAME_OPERANDS = { OperandType::NameString, OperandType::DataRefObject, OperandType::End };
+constexpr static auto SCOPE_OPERANDS = to_array({ OperandType::PackageLength, OperandType::NameString, OperandType::End });
+constexpr static auto NAME_OPERANDS = to_array({ OperandType::NameString, OperandType::DataRefObject, OperandType::End });
 
-constexpr static Array<OperandType, 2> BYTE_CONST_OPERANDS = { OperandType::ByteData, OperandType::End };
-constexpr static Array<OperandType, 2> WORD_CONST_OPERANDS = { OperandType::WordData, OperandType::End };
-constexpr static Array<OperandType, 2> DWORD_CONST_OPERANDS = { OperandType::DWordData, OperandType::End };
-constexpr static Array<OperandType, 2> QWORD_CONST_OPERANDS = { OperandType::QWordData, OperandType::End };
-constexpr static Array<OperandType, 2> STRING_CONST_OPERANDS = { OperandType::String, OperandType::End };
+constexpr static auto BYTE_CONST_OPERANDS = to_array({ OperandType::ByteData, OperandType::End });
+constexpr static auto WORD_CONST_OPERANDS = to_array({ OperandType::WordData, OperandType::End });
+constexpr static auto DWORD_CONST_OPERANDS = to_array({ OperandType::DWordData, OperandType::End });
+constexpr static auto QWORD_CONST_OPERANDS = to_array({ OperandType::QWordData, OperandType::End });
+constexpr static auto STRING_CONST_OPERANDS = to_array({ OperandType::String, OperandType::End });
 
-constexpr static Array<OperandType, 4> BUFFER_CONST_OPERANDS = {
+constexpr static auto BUFFER_CONST_OPERANDS = to_array({
     OperandType::PackageLength,
     OperandType::TermArg,
     OperandType::ByteBuffer,
     OperandType::End,
-};
+});
 
-constexpr static Array<OperandType, 6> PACKAGE_OPERANDS = {
-    OperandType::PackageLength,
+constexpr static auto PACKAGE_OPERANDS = to_array({
     OperandType::MarkAsCount,
+    OperandType::PackageLength,
     OperandType::ByteData,
-    OperandType::RepeatNextCount,
+    OperandType::RepeatNextBytes,
     OperandType::PackageElement,
     OperandType::End,
-};
+});
 
-constexpr static Array<OperandType, 4> METHOD_OPERANDS = {
+constexpr static auto VAR_PACKAGE_OPERANDS = to_array({
+    OperandType::MarkAsCount,
+    OperandType::PackageLength,
+    OperandType::TermArg,
+    OperandType::RepeatNextBytes,
+    OperandType::PackageElement,
+    OperandType::End,
+});
+
+constexpr static auto ALIAS_OPERANDS = to_array({
+    OperandType::NameString,
+    OperandType::NameString,
+    OperandType::End,
+});
+
+constexpr static auto METHOD_OPERANDS = to_array({
     OperandType::PackageLength,
     OperandType::NameString,
     OperandType::ByteData,
     OperandType::End,
-};
+});
 
-constexpr static Array<OperandType, 3> MUTEX_OPERANDS = {
+constexpr static auto MUTEX_OPERANDS = to_array({
     OperandType::NameString,
     OperandType::ByteData,
     OperandType::End,
-};
+});
 
-constexpr static Array<OperandType, 5> OP_REGION_OPERANDS = {
+constexpr static auto OP_REGION_OPERANDS = to_array({
     OperandType::NameString,
     OperandType::ByteData,
     OperandType::TermArg,
     OperandType::TermArg,
     OperandType::End,
-};
+});
 
-constexpr static Array<OperandType, 7> FIELD_OPERANDS = {
+constexpr static auto FIELD_OPERANDS = to_array({
     OperandType::MarkAsCount,
     OperandType::PackageLength,
     OperandType::NameString,
@@ -72,40 +87,81 @@ constexpr static Array<OperandType, 7> FIELD_OPERANDS = {
     OperandType::RepeatNextBytes,
     OperandType::FieldElement,
     OperandType::End,
-};
+});
 
-constexpr static Array<OperandType, 3> DEVICE_OPERANDS = {
+constexpr static auto DEVICE_OPERANDS = to_array({
     OperandType::PackageLength,
     OperandType::NameString,
     OperandType::End,
-};
+});
 
-constexpr static Array<OperandType, 6> PROCESSOR_OPERANDS = {
+constexpr static auto PROCESSOR_OPERANDS = to_array({
     OperandType::PackageLength,
     OperandType::NameString,
     OperandType::ByteData,
     OperandType::DWordData,
     OperandType::ByteData,
     OperandType::End,
-};
+});
 
-constexpr static Array<OperandType, 4> TARGET_BINARY_OPERANDS = {
+constexpr static auto POWER_RESOURCE_OPERANDS = to_array({
+    OperandType::PackageLength,
+    OperandType::NameString,
+    OperandType::ByteData,
+    OperandType::WordData,
+    OperandType::End,
+});
+
+constexpr static auto INDEX_FIELD_OPERANDS = to_array({
+    OperandType::MarkAsCount,
+    OperandType::PackageLength,
+    OperandType::NameString,
+    OperandType::NameString,
+    OperandType::ByteData,
+    OperandType::RepeatNextBytes,
+    OperandType::IndexFieldElement,
+    OperandType::End,
+});
+
+constexpr static auto TARGET_BINARY_OPERANDS = to_array({
     OperandType::TermArg,
     OperandType::TermArg,
     OperandType::Target,
     OperandType::End,
-};
+});
 
-constexpr static Array<OperandType, 3> STORE_OPERANDS = {
+constexpr static auto BINARY_OPERANDS = to_array({
+    OperandType::TermArg,
+    OperandType::TermArg,
+    OperandType::End,
+});
+
+constexpr static auto UNARY_OPERANDS = to_array({
+    OperandType::TermArg,
+    OperandType::End,
+});
+
+constexpr static auto STORE_OPERANDS = to_array({
     OperandType::TermArg,
     OperandType::SuperName,
     OperandType::End,
-};
+});
 
-constexpr static Array<OperandType, 2> RETURN_OPERANDS = {
+constexpr static auto IF_OPERANDS = to_array({
+    OperandType::PackageLength,
     OperandType::TermArg,
     OperandType::End,
-};
+});
+
+constexpr static auto ELSE_OPERANDS = to_array({
+    OperandType::PackageLength,
+    OperandType::End,
+});
+
+constexpr static auto RETURN_OPERANDS = to_array({
+    OperandType::TermArg,
+    OperandType::End,
+});
 
 static ErrorOr<ReadonlySpan<OperandType>> get_opcode_operand_template(Opcode opcode)
 {
@@ -124,7 +180,11 @@ static ErrorOr<ReadonlySpan<OperandType>> get_opcode_operand_template(Opcode opc
         return BUFFER_CONST_OPERANDS.span();
     case Opcode::PackageOp:
         return PACKAGE_OPERANDS.span();
+    case Opcode::VarPackageOp:
+        return VAR_PACKAGE_OPERANDS.span();
 
+    case Opcode::AliasOp:
+        return ALIAS_OPERANDS.span();
     case Opcode::ScopeOp:
         return SCOPE_OPERANDS.span();
     case Opcode::NameOp:
@@ -141,6 +201,10 @@ static ErrorOr<ReadonlySpan<OperandType>> get_opcode_operand_template(Opcode opc
         return DEVICE_OPERANDS.span();
     case Opcode::ProcessorOp:
         return PROCESSOR_OPERANDS.span();
+    case Opcode::PowerResOp:
+        return POWER_RESOURCE_OPERANDS.span();
+    case Opcode::IndexFieldOp:
+        return INDEX_FIELD_OPERANDS.span();
 
     case Opcode::AddOp:
     case Opcode::SubtractOp:
@@ -154,9 +218,23 @@ static ErrorOr<ReadonlySpan<OperandType>> get_opcode_operand_template(Opcode opc
     case Opcode::XorOp:
         return TARGET_BINARY_OPERANDS.span();
 
+    case Opcode::LAndOp:
+    case Opcode::LOrOp:
+    case Opcode::LEqualOp:
+    case Opcode::LGreaterOp:
+    case Opcode::LLessOp:
+        return BINARY_OPERANDS.span();
+
+    case Opcode::LNotOp:
+        return UNARY_OPERANDS.span();
+
     case Opcode::StoreOp:
         return STORE_OPERANDS.span();
 
+    case Opcode::IfOp:
+        return IF_OPERANDS.span();
+    case Opcode::ElseOp:
+        return ELSE_OPERANDS.span();
     case Opcode::ReturnOp:
         return RETURN_OPERANDS.span();
 
@@ -168,6 +246,7 @@ static ErrorOr<ReadonlySpan<OperandType>> get_opcode_operand_template(Opcode opc
         return EMPTY_OPERANDS.span();
 
     case Opcode::NodeEvaluation:
+    case Opcode::EvaluatedValue:
         VERIFY_NOT_REACHED();
 
     default:
@@ -193,7 +272,7 @@ ErrorOr<OpcodeFrame> OpcodeFrame::root_frame()
 OperandType OpcodeFrame::peek_next_operand()
 {
     auto operand = m_operand_template[m_operand_template_index];
-    if (operand == OperandType::MarkAsCount || operand == OperandType::RepeatNextBytes || operand == OperandType::RepeatNextCount)
+    if (operand == OperandType::MarkAsCount || operand == OperandType::RepeatNextBytes)
         operand = m_operand_template[m_operand_template_index + 1];
 
     return operand;
@@ -213,6 +292,7 @@ bool OpcodeFrame::filter_opcode_for_next_operand(Opcode opcode)
     case OperandType::String:
     case OperandType::ByteBuffer:
     case OperandType::FieldElement:
+    case OperandType::IndexFieldElement:
         return false;
 
     case OperandType::TermArg:
@@ -232,7 +312,6 @@ bool OpcodeFrame::filter_opcode_for_next_operand(Opcode opcode)
 
     case OperandType::MarkAsCount:
     case OperandType::RepeatNextBytes:
-    case OperandType::RepeatNextCount:
         VERIFY_NOT_REACHED();
     }
 
@@ -245,10 +324,10 @@ ErrorOr<OperandType> OpcodeFrame::begin_operand(size_t current_offset)
 
     if (operand == OperandType::MarkAsCount) {
         m_counter_value_index = m_operands.size();
-    } else if (operand == OperandType::RepeatNextBytes || operand == OperandType::RepeatNextCount) {
+    } else if (operand == OperandType::RepeatNextBytes) {
         if (!m_counter.has_value()) {
             m_counter = TRY(m_operands.at(m_counter_value_index).as<u64>());
-            check_repeat_opcodes(current_offset);
+            check_repeat_opcode(current_offset);
         }
     }
 
@@ -263,10 +342,7 @@ ErrorOr<void> OpcodeFrame::finish_operand(size_t current_offset)
         return {};
     }
 
-    if (operand_type == OperandType::RepeatNextCount)
-        m_counter.value()--;
-
-    if (!check_repeat_opcodes(current_offset))
+    if (!check_repeat_opcode(current_offset))
         m_operand_template_index++;
 
     return {};
@@ -278,7 +354,7 @@ ErrorOr<void> OpcodeFrame::finish_operand(Object&& operand, size_t current_offse
     return finish_operand(current_offset);
 }
 
-bool OpcodeFrame::check_repeat_opcodes(size_t current_offset)
+bool OpcodeFrame::check_repeat_opcode(size_t current_offset)
 {
     auto operand_type = m_operand_template[m_operand_template_index];
 
@@ -287,15 +363,6 @@ bool OpcodeFrame::check_repeat_opcodes(size_t current_offset)
             m_counter = {};
             m_operand_template_index += 2;
             return true;
-        }
-
-        return true;
-    }
-
-    if (operand_type == OperandType::RepeatNextCount) {
-        if (m_counter.value() == 0) {
-            m_counter = {};
-            m_operand_template_index += 2;
         }
 
         return true;

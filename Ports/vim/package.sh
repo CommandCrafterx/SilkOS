@@ -1,9 +1,9 @@
 #!/usr/bin/env -S bash ../.port_include.sh
 port='vim'
-version='9.2.1254'
+version='9.2.1351'
 useconfigure="true"
 files=(
-    "https://github.com/vim/vim/archive/refs/tags/v${version}.tar.gz#32f47ddfe2357c3fa7a0b16d327e57884a29d991a27ad2a64e01937b8d1a71e6"
+    "https://github.com/vim/vim/archive/refs/tags/v${version}.tar.gz#f5e1c90b7d64ae3349015c514bbad89df3c92dc5115513b5b71269e7c36437da"
 )
 configopts=("--with-tlib=tinfo" "--with-features=huge" "CFLAGS=-std=c17")
 depends=("ncurses" "gettext")

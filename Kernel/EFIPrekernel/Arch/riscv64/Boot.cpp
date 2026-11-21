@@ -39,6 +39,10 @@ namespace Kernel {
         csrw satp, %[satp]
         sfence.vma
 
+        # The kernel's trap handler expects sscratch to be zero if we are in supervisor mode.
+        # sscratch contains the kernel stack pointer if we are in user mode.
+        csrw sscratch, zero
+
         li ra, 0
         li fp, 0
         jr %[kernel_entry]
@@ -103,9 +107,6 @@ static void set_up_quickmap_page_table(void* root_page_table, BootInfo& boot_inf
 
 void arch_prepare_boot(void* root_page_table, BootInfo& boot_info)
 {
-    if (boot_info.flattened_devicetree_paddr.is_null())
-        PANIC("No devicetree configuration table was found. RISC-V systems without a devicetree UEFI configuration table are not supported.");
-
     boot_info.arch_specific.boot_hart_id = get_boot_hart_id();
 
     map_bootstrap_page(root_page_table, boot_info);

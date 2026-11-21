@@ -80,6 +80,7 @@ struct [[gnu::packed]] HardwareFeatures {
     bool hardware_reduced_acpi : 1;
     bool low_power_s0_idle_capable : 1;
 };
+
 struct [[gnu::packed]] x86_Specific_Flags {
     bool legacy_devices : 1;
     bool keyboard_8042 : 1;
@@ -87,7 +88,16 @@ struct [[gnu::packed]] x86_Specific_Flags {
     bool msi_not_supported : 1;
     bool cmos_rtc_not_present : 1;
 };
+
+// https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#arm-architecture-boot-flags
+enum class ARMArchitectureBootFlags : u16 {
+    PSCICompliant = 1u << 0,
+    PSCIUseHVC = 1u << 1,
 };
+
+AK_ENUM_BITWISE_OPERATORS(ARMArchitectureBootFlags);
+
+}
 
 // https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#generic-address-structure
 namespace GenericAddressStructure {
@@ -231,7 +241,7 @@ struct [[gnu::packed]] FADT {
     FADTFlags::FeatureFlags flags;
     GenericAddressStructure reset_reg;
     u8 reset_value;
-    u16 arm_boot_arch;
+    FADTFlags::ARMArchitectureBootFlags arm_boot_arch;
     u8 fadt_minor_version;
     u64 x_firmware_ctrl;
     u64 x_dsdt;
@@ -261,11 +271,14 @@ enum class MADTEntryType : u8 {
     Platform_interrupt_Sources = 0x8,
     Local_x2APIC = 0x9,
     Local_x2APIC_NMI = 0xA,
-    GIC_CPU = 0xB,
+    GIC_CPU_Interface = 0xB,
     GIC_Distributor = 0xC,
-    GIC_MSI = 0xD,
-    GIC_Redistrbutor = 0xE,
-    GIC_Interrupt_Translation = 0xF
+    GIC_MSI_Frame = 0xD,
+    GIC_Redistributor = 0xE,
+    GIC_Interrupt_Translation_Service = 0xF,
+    RISCV_Hart_Local_Interrupt_Controller = 0x18,
+    RISCV_Advanced_Platform_Level_Interrupt_Controller = 0x1A,
+    RISCV_Platform_Level_Interrupt_Controller = 0x1B,
 };
 
 struct [[gnu::packed]] MADTEntryHeader {
@@ -309,12 +322,118 @@ struct [[gnu::packed]] InterruptSourceOverride {
     u32 global_system_interrupt;
     u16 flags;
 };
+
+// https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#gic-cpu-interface-gicc-structure
+struct [[gnu::packed]] GICCPUInterface {
+    // https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#gicc-cpu-interface-flags
+    enum class Flags : u32 {
+        Enabled = 1u << 0,
+        PerformanceInterruptEdgeTriggered = 1u << 1,
+        VGICMaintenanceInterruptEdgeTriggered = 1u << 2,
+        OnlineCapable = 1u << 3,
+        GICRNonCoherent = 1u << 4,
+    };
+
+    static constexpr size_t MPDIR_AFF0_OFFSET = 0;
+    static constexpr size_t MPDIR_AFF1_OFFSET = 8;
+    static constexpr size_t MPDIR_AFF2_OFFSET = 16;
+    static constexpr size_t MPDIR_AFF3_OFFSET = 32;
+
+    MADTEntryHeader h;
+    u16 _;
+    u32 cpu_interface_number;
+    u32 acpi_processor_uid;
+    Flags flags;
+    u32 parking_protocol_version;
+    u32 performance_interrupt_gsi;
+    u64 parked_address;
+    u64 physical_base_address;
+    u64 gicv;
+    u64 gich;
+    u32 vgic_maintenance_interrupt;
+    u64 gicr_base_address;
+    u64 mpidr;
+    u8 processor_power_efficiency_class;
+    u8 _;
+    u16 spe_overflow_interrupt;
+    u16 trbe_interrupt;
+};
+static_assert(AssertSize<GICCPUInterface, 82>());
+
+AK_ENUM_BITWISE_OPERATORS(GICCPUInterface::Flags);
+
+// https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#gic-distributor-gicd-structure
+struct [[gnu::packed]] GICDistributor {
+    MADTEntryHeader h;
+    u16 _;
+    u32 gic_id;
+    u64 physical_base_address;
+    u32 system_vector_base;
+    u8 gic_version;
+    u8 _[3];
+};
+static_assert(AssertSize<GICDistributor, 24>());
+
+// https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#risc-v-interrupt-controller-rintc-structure
+struct [[gnu::packed]] RISCVInterruptController {
+    enum class Flags : u32 {
+        Enabled = 1u << 0,
+        OnlineCapable = 1u << 1,
+    };
+
+    union ExternalInterruptControllerID {
+        struct {
+            u16 idc_id;
+            u8 _;
+            u8 aplic_id;
+        } aplic;
+
+        struct {
+            u16 s_mode_context_id;
+            u8 _;
+            u8 plic_id;
+        } plic;
+    };
+
+    MADTEntryHeader h;
+    u8 version;
+    u8 _;
+    Flags flags;
+    u64 hart_id;
+    u32 acpi_processor_uid;
+    ExternalInterruptControllerID external_interrupt_controller_id;
+    u64 imsic_base_address;
+    u32 imsic_size;
+};
+static_assert(AssertSize<RISCVInterruptController, 36>());
+
+AK_ENUM_BITWISE_OPERATORS(RISCVInterruptController::Flags);
+
+// https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#risc-v-platform-level-interrupt-controller-plic-structure
+struct [[gnu::packed]] RISCVPlatformLevelInterruptController {
+    enum class Flags : u32 { };
+
+    MADTEntryHeader h;
+    u8 version;
+    u8 plic_id;
+    u64 hardware_id;
+    u16 total_external_interrupt_sources_supported;
+    u16 max_priority;
+    Flags flags;
+    u32 plic_size;
+    u64 plic_address;
+    u32 global_system_interrupt_base;
+};
+static_assert(AssertSize<RISCVPlatformLevelInterruptController, 36>());
+
+AK_ENUM_BITWISE_OPERATORS(RISCVPlatformLevelInterruptController::Flags);
+
 }
 
 // https://uefi.org/specs/ACPI/6.5/05_ACPI_Software_Programming_Model.html#multiple-apic-description-table-madt-format
 struct [[gnu::packed]] MADT {
     SDTHeader h;
-    u32 lapic_address;
+    u32 local_interrupt_controller_address;
     u32 flags;
     MADTEntryHeader entries[];
 };
@@ -342,6 +461,59 @@ struct [[gnu::packed]] DSDT {
     SDTHeader h;
     unsigned char definition_block[];
 };
+
+// https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#generic-timer-description-table-gtdt
+struct [[gnu::packed]] GTDT {
+    // https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#flag-definitions-secure-el1-timer-non-secure-el1-timer-el2-timer-virtual-el1-timer-and-virtual-el2-timer
+    enum class TimerFlags : u32 {
+        TimerInterruptEdgeTriggered = 1u << 0,
+        TimerInterruptActiveLow = 1u << 1,
+        AlwaysOnCapability = 1u << 2,
+    };
+
+    SDTHeader h;
+    u64 cnt_control_base_physical_address;
+    u32 _;
+    u32 secure_el1_timer_gsi;
+    TimerFlags secure_el1_timer_flags;
+    u32 non_secure_el1_timer_gsi;
+    TimerFlags non_secure_el1_timer_flags;
+    u32 virtual_el1_timer_gsi;
+    TimerFlags virtual_el1_timer_flags;
+    u32 el2_timer_gsi;
+    TimerFlags el2_timer_flags;
+    u64 cnt_read_base_base_physical_address;
+    u32 platform_timer_count;
+    u32 platform_timer_offset;
+    u32 virtual_el2_timer_gsi;
+    TimerFlags virtual_el2_timer_flags;
+
+    // The Platform Timer Structure array offset is dependent on the platform_timer_offset member,
+    // so we can't statically declare it here.
+};
+static_assert(AssertSize<GTDT, 104>());
+
+AK_ENUM_BITWISE_OPERATORS(GTDT::TimerFlags);
+
+// https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#risc-v-hart-capabilities-table-rhct
+struct [[gnu::packed]] RHCT {
+    // https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#rhct-flags
+    enum class Flags : u32 {
+        TimerCannotWakeUpCPUCapability = 1u << 0,
+    };
+
+    SDTHeader h;
+    Flags flags;
+    u64 time_base_frequency;
+    u32 number_of_rhct_nodes;
+    u32 offset_to_the_rhct_node_array;
+
+    // The RCHT node array offset is dependent on the offset_to_the_rhct_node_array member,
+    // so we can't statically declare it here.
+};
+static_assert(AssertSize<RHCT, 56>());
+
+AK_ENUM_BITWISE_OPERATORS(RHCT::Flags);
 
 // https://uefi.org/specs/ACPI/6.6/04_ACPI_Hardware_Specification.html#pm1-control-registers-fixed-hardware-feature-control-bits
 struct [[gnu::packed]] PM1ControlRegister {
@@ -501,8 +673,9 @@ enum class Opcode : u16 {
     Arg5Op = 0x6D,
     Arg6Op = 0x6E,
 
-    // NOTE: This is not a real opcode, but it's used internally to represent name string evaluation
-    NodeEvaluation = 0xFFFF,
+    // NOTE: Those are not real opcodes, but they're used internally
+    NodeEvaluation = 0xFF00, // Generated for name string evaluation
+    EvaluatedValue = 0xFF01, // Generated to inject a value into the interpreter
 };
 
 struct MethodFlags {
@@ -510,7 +683,35 @@ struct MethodFlags {
     u8 serialized : 1;
     u8 sync_level : 4;
 };
-static_assert(sizeof(MethodFlags) == 1);
+static_assert(AssertSize<MethodFlags, 1>());
+
+enum class FieldAccess : u8 {
+    AnyAccess = 0,
+    ByteAccess = 1,
+    WordAccess = 2,
+    DWordAccess = 3,
+    QWordAccess = 4,
+    BufferAccess = 5,
+};
+
+enum class FieldLock : u8 {
+    NoLock = 0,
+    Lock = 1,
+};
+
+enum class FieldUpdate : u8 {
+    Preserve = 0,
+    WriteAsOnes = 1,
+    WriteAsZeros = 2,
+};
+
+struct FieldFlags {
+    FieldAccess access : 4;
+    FieldLock lock : 1;
+    FieldUpdate update : 2;
+    u8 : 1;
+};
+static_assert(AssertSize<FieldFlags, 1>());
 
 }
 

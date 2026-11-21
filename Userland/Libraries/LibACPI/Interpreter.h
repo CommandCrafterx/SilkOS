@@ -10,6 +10,7 @@
 #include <AK/Debug.h>
 #include <AK/Error.h>
 #include <AK/Function.h>
+#include <AK/HashMap.h>
 #include <AK/Vector.h>
 #include <LibACPI/Node.h>
 #include <LibACPI/Nodes.h>
@@ -90,31 +91,46 @@ private:
     ErrorOr<NonnullRefPtr<Node>> find_node(NameString const& path, NonnullRefPtr<Node> scope) const;
     ErrorOr<void> walk_tree(NonnullRefPtr<Node> tree_root, Function<ErrorOr<void>(NonnullRefPtr<Node>, u32)> callback) const;
 
-    ErrorOr<Object> evaluate(NonnullRefPtr<Node> node, ReadonlySpan<Object> arguments = {});
-    ErrorOr<Object> call_method(NonnullRefPtr<MethodNode> node, ReadonlySpan<Object> arguments);
+    ErrorOr<Object> evaluate(Node& node, ReadonlySpan<Object> arguments = {});
+    ErrorOr<Object> call_method(MethodNode& node, ReadonlySpan<Object> arguments);
 
     ErrorOr<Object*> resolve_reference(Object& reference);
     ErrorOr<Object*> resolve_references(Object& reference);
 
+    NonnullRefPtr<Node> resolve_alias(NonnullRefPtr<Node> alias_node) const;
+
     ErrorOr<void> store(Object const& target, Object value);
 
-    ErrorOr<IterationDecision> cycle(TableStream& stream);
-    ErrorOr<IterationDecision> read_operand(TableStream& stream, OperandType operand);
+    ErrorOr<void> cycle(TableStream& stream);
+    ErrorOr<void> read_operand(TableStream& stream, OperandType operand);
 
     ErrorOr<Object> finalize_value_opcode(OpcodeFrame& frame);
     ErrorOr<void> finalize_term_opcode(OpcodeFrame& frame, TableStream& stream);
 
     void debug_print_header(TableStream& stream, size_t operand_index = 0);
 
-    State m_state { State::ReadingOpcode };
+    ErrorOr<void> allocate_frame(TableStream stream, ScopeFrame root_scope_frame);
 
-    u64 m_current_field_offset { 0 };
+    struct Frame {
+        TableStream stream;
+        State state { State::ReadingOpcode };
+
+        Vector<ScopeFrame> scope_frames;
+        Vector<OpcodeFrame> opcode_frames;
+        HashMap<size_t, bool> should_take_else;
+
+        u64 current_field_offset { 0 };
+
+        Frame(TableStream stream)
+            : stream(move(stream))
+        {
+        }
+    };
 
     AK::Vector<ByteBuffer> m_loaded_tables;
-    Vector<ScopeFrame> m_scope_frames;
-    Vector<OpcodeFrame> m_opcode_frames;
-
     NonnullRefPtr<Node> m_namespace_root;
+
+    Vector<Frame> m_frame_stack;
 };
 
 }

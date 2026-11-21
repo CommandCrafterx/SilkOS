@@ -77,9 +77,6 @@ static void set_up_quickmap_page_table(void* root_page_table, BootInfo& boot_inf
 
 void arch_prepare_boot(void* root_page_table, BootInfo& boot_info)
 {
-    if (boot_info.flattened_devicetree_paddr.is_null())
-        PANIC("No devicetree configuration table was found. AArch64 systems without a devicetree UEFI configuration table are not supported.");
-
     map_bootstrap_page(root_page_table, boot_info);
     set_up_quickmap_page_table(root_page_table, boot_info);
 
@@ -183,8 +180,6 @@ void arch_prepare_boot(void* root_page_table, BootInfo& boot_info)
     // Auto-detect the Intermediate Physical Address Size.
     Aarch64::ID_AA64MMFR0_EL1 feature_register = Aarch64::ID_AA64MMFR0_EL1::read();
     tcr_el1.IPS = feature_register.PARange;
-
-    Aarch64::TCR_EL1::write(tcr_el1);
 
     // System Control Register value for EL1 with MMU enabled
     Aarch64::SCTLR_EL1 sctlr_el1_mmu_on = Aarch64::SCTLR_EL1::default_value();

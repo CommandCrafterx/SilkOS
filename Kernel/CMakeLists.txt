@@ -288,7 +288,9 @@ set(KERNEL_SOURCES
     Library/UserOrKernelBuffer.cpp
     Net/Cadence/GEM.cpp
     Net/Intel/E1000NetworkAdapter.cpp
+    Net/Realtek/RTL8168HardwareQuirks.cpp
     Net/Realtek/RTL8168NetworkAdapter.cpp
+    Net/Realtek/RTL8168PHYConfiguration.cpp
     Net/VirtIO/VirtIONetworkAdapter.cpp
     Net/IP/Socket.cpp
     Net/LocalSocket.cpp
@@ -542,7 +544,7 @@ elseif("${SERENITY_ARCH}" STREQUAL "aarch64")
 
         Bus/PCI/Controller/GenericECAMHostController.cpp
         Bus/PCI/DeviceTreeHelpers.cpp
-        Bus/PCI/DeviceTreeInitializer.cpp
+        Bus/PCI/GenericInitializer.cpp
     )
 
     # Otherwise linker errors e.g undefined reference to `__aarch64_cas8_acq_rel'
@@ -552,8 +554,6 @@ elseif("${SERENITY_ARCH}" STREQUAL "aarch64")
     #       by the compiler. The CPU cannot access global variables without the MMU as the kernel is linked for a virtual address in high memory.
     set_source_files_properties(${SOURCES_RUNNING_WITHOUT_MMU} PROPERTIES COMPILE_FLAGS "-fno-stack-protector -fno-sanitize=all")
 elseif("${SERENITY_ARCH}" STREQUAL "riscv64")
-    find_package(Python3 COMPONENTS Interpreter REQUIRED)
-
     set(extensions_header "${CMAKE_CURRENT_BINARY_DIR}/Arch/riscv64/Extensions.h")
 
     add_custom_command(
@@ -606,7 +606,7 @@ elseif("${SERENITY_ARCH}" STREQUAL "riscv64")
 
         Bus/PCI/Controller/GenericECAMHostController.cpp
         Bus/PCI/DeviceTreeHelpers.cpp
-        Bus/PCI/DeviceTreeInitializer.cpp
+        Bus/PCI/GenericInitializer.cpp
 
         Devices/Time/GoldfishRTC.cpp
     )
